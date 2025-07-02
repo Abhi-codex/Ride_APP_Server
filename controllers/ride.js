@@ -165,3 +165,22 @@ export const getMyRides = async (req, res) => {
     throw new BadRequestError("Failed to retrieve rides");
   }
 };
+
+export const getAvailableRides = async (req, res) => {
+  try {
+    const availableRides = await Ride.find({
+      status: "SEARCHING_FOR_RIDER",
+    })
+      .populate("customer", "phone")
+      .sort({ createdAt: -1 });
+
+    res.status(StatusCodes.OK).json({
+      message: "Available rides retrieved successfully",
+      count: availableRides.length,
+      rides: availableRides,
+    });
+  } catch (error) {
+    console.error("Error retrieving available rides:", error);
+    throw new BadRequestError("Failed to retrieve available rides");
+  }
+};

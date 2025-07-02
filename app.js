@@ -3,6 +3,7 @@ import 'express-async-errors';
 import EventEmitter from 'events';
 import express from 'express';
 import http from 'http';
+import mongoose from 'mongoose';
 import { Server as socketIo } from 'socket.io'; 
 import connectDB from './config/connect.js';
 import notFoundMiddleware from './middleware/not-found.js';
@@ -54,6 +55,25 @@ app.get('/health', (req, res) => {
   res.status(200).json({ 
     status: 'OK', 
     message: 'Server is running',
+    timestamp: new Date().toISOString(),
+    database: mongoose.connection.readyState === 1 ? 'Connected' : 'Disconnected'
+  });
+});
+
+app.get('/db-status', (req, res) => {
+  const dbStates = {
+    0: 'Disconnected',
+    1: 'Connected',
+    2: 'Connecting',
+    3: 'Disconnecting'
+  };
+  
+  res.status(200).json({
+    database: {
+      status: dbStates[mongoose.connection.readyState],
+      host: mongoose.connection.host || 'Unknown',
+      name: mongoose.connection.name || 'Unknown'
+    },
     timestamp: new Date().toISOString()
   });
 });
@@ -67,22 +87,23 @@ app.use(notFoundMiddleware);
 app.use(errorHandlerMiddleware);
 
 const start = async () => {
+  // Start the server first
+  const PORT = process.env.PORT || 3000;
+  const server_instance = server.listen(PORT, "0.0.0.0", () => {
+    console.log(`🚀 Server running on http://localhost:${PORT}`);
+    console.log(`🌐 Network access: http://192.168.31.49:${PORT}`);
+    console.log(`📍 Health check: http://192.168.31.49:${PORT}/health`);
+    console.log(`🔐 Auth endpoint: http://192.168.31.49:${PORT}/auth/signin`);
+    console.log(`🚗 Ride endpoints: http://192.168.31.49:${PORT}/ride/*`);
+  });
+
+  // Then attempt database connection
   try {
     await connectDB(process.env.MONGO_URI);
-    console.log('Database connected successfully');
-    
-    const PORT = process.env.PORT || 3000;
-    server.listen(PORT, "0.0.0.0", () => {
-      console.log(`HTTP server is running on port http://localhost:${PORT}`);
-      console.log(`Server is accessible from network at http://192.168.31.49:${PORT}`);
-      console.log('Available endpoints:');
-      console.log(`  - POST http://192.168.31.49:${PORT}/auth/signin`);
-      console.log(`  - POST http://192.168.31.49:${PORT}/auth/signup`);
-      console.log(`  - GET  http://192.168.31.49:${PORT}/health`);
-      console.log(`  - Ride endpoints require authentication`);
-    });
+    console.log('✅ Database connected successfully');
   } catch (error) {
-    console.log('Error starting server:', error);
+    console.log('⚠️ Database connection failed:', error.message);
+    console.log('🔄 Server is running without database. Database will retry connection automatically.');
   }
 };
 
