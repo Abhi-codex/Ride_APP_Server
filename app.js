@@ -87,7 +87,6 @@ app.use(notFoundMiddleware);
 app.use(errorHandlerMiddleware);
 
 const start = async () => {
-  // Start the server first
   const PORT = process.env.PORT || 3000;
   const server_instance = server.listen(PORT, "0.0.0.0", () => {
     console.log(`🚀 Server running on http://localhost:${PORT}`);
@@ -97,7 +96,6 @@ const start = async () => {
     console.log(`🚗 Ride endpoints: http://192.168.31.49:${PORT}/ride/*`);
   });
 
-  // Then attempt database connection
   try {
     await connectDB(process.env.MONGO_URI);
     console.log('✅ Database connected successfully');
