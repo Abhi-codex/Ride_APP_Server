@@ -6,7 +6,7 @@ const rideSchema = new Schema(
   {
     vehicle: {
       type: String,
-      enum: ["bike", "auto", "cabEconomy", "cabPremium"],
+      enum: ["basicAmbulance", "advancedAmbulance", "icuAmbulance", "airAmbulance"],
       required: true,
     },
     distance: {
@@ -44,6 +44,12 @@ const rideSchema = new Schema(
     },
     otp: {
       type: String,
+      default: null,
+    },
+    rating: {
+      type: Number,
+      min: 1,
+      max: 5,
       default: null,
     },
   },

@@ -1,5 +1,5 @@
-import mongoose from 'mongoose';
-import jwt from 'jsonwebtoken';
+import mongoose from "mongoose";
+import jwt from "jsonwebtoken";
 
 const { Schema } = mongoose;
 
@@ -7,13 +7,49 @@ const userSchema = new Schema(
   {
     role: {
       type: String,
-      enum: ["customer", "rider"],
+      enum: ["patient", "driver"],
       required: true,
     },
     phone: {
       type: String,
       required: true,
       unique: true,
+    },
+    name: {
+      type: String,
+      default: null,
+    },
+    email: {
+      type: String,
+      default: null,
+    },
+    isOnline: {
+      type: Boolean,
+      default: false,
+    },
+    vehicle: {
+      type: {
+        type: String,
+        enum: ["basicAmbulance", "advancedAmbulance", "icuAmbulance", "airAmbulance"],
+        default: null,
+      },
+      plateNumber: {
+        type: String,
+        default: null,
+      },
+      model: {
+        type: String,
+        default: null,
+      },
+      licenseNumber: {
+        type: String,
+        default: null,
+      },
+      certificationLevel: {
+        type: String,
+        enum: ["EMT-Basic", "EMT-Intermediate", "EMT-Paramedic", "Critical Care"],
+        default: null,
+      },
     },
   },
   {

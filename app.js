@@ -12,6 +12,7 @@ import authMiddleware from './middleware/authentication.js';
 
 import authRouter from './routes/auth.js';
 import rideRouter from './routes/ride.js';
+import driverRouter from './routes/driver.js';
 
 import handleSocketConnection from './controllers/sockets.js';
 
@@ -81,6 +82,7 @@ app.get('/db-status', (req, res) => {
 // Routes
 app.use("/auth", authRouter);
 app.use("/ride", authMiddleware, rideRouter);
+app.use("/driver", authMiddleware, driverRouter);
 
 // Middleware
 app.use(notFoundMiddleware);
@@ -89,11 +91,12 @@ app.use(errorHandlerMiddleware);
 const start = async () => {
   const PORT = process.env.PORT || 3000;
   const server_instance = server.listen(PORT, "0.0.0.0", () => {
-    console.log(`🚀 Server running on http://localhost:${PORT}`);
+    console.log(`🚀 Service Server running on http://localhost:${PORT}`);
     console.log(`🌐 Network access: http://192.168.31.49:${PORT}`);
     console.log(`📍 Health check: http://192.168.31.49:${PORT}/health`);
     console.log(`🔐 Auth endpoint: http://192.168.31.49:${PORT}/auth/signin`);
-    console.log(`🚗 Ride endpoints: http://192.168.31.49:${PORT}/ride/*`);
+    console.log(`� Emergency calls: http://192.168.31.49:${PORT}/ride/*`);
+    console.log(`👨‍⚕️ Driver endpoints: http://192.168.31.49:${PORT}/driver/*`);
   });
 
   try {

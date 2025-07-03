@@ -5,6 +5,7 @@ import {
   acceptRide,
   getMyRides,
   getAvailableRides,
+  rateRide,
 } from "../controllers/ride.js";
 
 const router = express.Router();
@@ -19,5 +20,6 @@ router.patch("/accept/:rideId", acceptRide);
 router.patch("/update/:rideId", updateRideStatus);
 router.get("/rides", getMyRides);
 router.get("/driverrides", getAvailableRides);
+router.patch("/rate/:rideId", rateRide);
 
 export default router;

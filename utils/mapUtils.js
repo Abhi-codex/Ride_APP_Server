@@ -14,10 +14,10 @@ export const calculateDistance = (lat1, lon1, lat2, lon2) => {
 
 export const calculateFare = (distance) => {
   const rateStructure = {
-    bike: { baseFare: 10, perKmRate: 5, minimumFare: 25 },
-    auto: { baseFare: 15, perKmRate: 7, minimumFare: 30 },
-    cabEconomy: { baseFare: 20, perKmRate: 10, minimumFare: 50 },
-    cabPremium: { baseFare: 30, perKmRate: 15, minimumFare: 70 },
+    basicAmbulance: { baseFare: 50, perKmRate: 15, minimumFare: 100 },
+    advancedAmbulance: { baseFare: 80, perKmRate: 20, minimumFare: 150 },
+    icuAmbulance: { baseFare: 120, perKmRate: 30, minimumFare: 200 },
+    airAmbulance: { baseFare: 500, perKmRate: 100, minimumFare: 800 },
   };
 
   const fareCalculation = (baseFare, perKmRate, minimumFare) => {
@@ -26,25 +26,25 @@ export const calculateFare = (distance) => {
   };
 
   return {
-    bike: fareCalculation(
-      rateStructure.bike.baseFare,
-      rateStructure.bike.perKmRate,
-      rateStructure.bike.minimumFare
+    basicAmbulance: fareCalculation(
+      rateStructure.basicAmbulance.baseFare,
+      rateStructure.basicAmbulance.perKmRate,
+      rateStructure.basicAmbulance.minimumFare
     ),
-    auto: fareCalculation(
-      rateStructure.auto.baseFare,
-      rateStructure.auto.perKmRate,
-      rateStructure.auto.minimumFare
+    advancedAmbulance: fareCalculation(
+      rateStructure.advancedAmbulance.baseFare,
+      rateStructure.advancedAmbulance.perKmRate,
+      rateStructure.advancedAmbulance.minimumFare
     ),
-    cabEconomy: fareCalculation(
-      rateStructure.cabEconomy.baseFare,
-      rateStructure.cabEconomy.perKmRate,
-      rateStructure.cabEconomy.minimumFare
+    icuAmbulance: fareCalculation(
+      rateStructure.icuAmbulance.baseFare,
+      rateStructure.icuAmbulance.perKmRate,
+      rateStructure.icuAmbulance.minimumFare
     ),
-    cabPremium: fareCalculation(
-      rateStructure.cabPremium.baseFare,
-      rateStructure.cabPremium.perKmRate,
-      rateStructure.cabPremium.minimumFare
+    airAmbulance: fareCalculation(
+      rateStructure.airAmbulance.baseFare,
+      rateStructure.airAmbulance.perKmRate,
+      rateStructure.airAmbulance.minimumFare
     ),
   };
 };
