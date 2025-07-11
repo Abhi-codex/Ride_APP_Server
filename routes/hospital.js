@@ -5,7 +5,7 @@ import {
   createHospital,
   getHospitals
 } from "../controllers/hospital.js";
-import { auth } from "../middleware/authentication.js";
+import auth from "../middleware/authentication.js";
 
 const router = express.Router();
 

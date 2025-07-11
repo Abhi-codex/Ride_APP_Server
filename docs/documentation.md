@@ -196,7 +196,8 @@ Updates user profile with detailed information. (Requires authentication)
     "plateNumber": "AMB123",
     "model": "Mercedes Sprinter",
     "licenseNumber": "EMT-123456",
-    "certificationLevel": "EMT-Paramedic"
+    "certificationLevel": "EMT-Paramedic",
+    "specializations": ["cardiac", "trauma", "general"]
   },
   "hospitalAffiliation": {
     "isAffiliated": true,
