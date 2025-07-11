@@ -27,10 +27,48 @@ const userSchema = new Schema(
       type: Boolean,
       default: false,
     },
+    // Hospital affiliation details for drivers
+    hospitalAffiliation: {
+      isAffiliated: {
+        type: Boolean,
+        default: false,
+      },
+      hospitalName: {
+        type: String,
+        default: null,
+      },
+      hospitalId: {
+        type: String,
+        default: null,
+      },
+      hospitalAddress: {
+        type: String,
+        default: null,
+      },
+      employeeId: {
+        type: String,
+        default: null,
+      },
+      // If affiliated, hospital's fare formula will be used
+      customFareFormula: {
+        baseFare: {
+          type: Number,
+          default: null,
+        },
+        perKmRate: {
+          type: Number,
+          default: null,
+        },
+        minimumFare: {
+          type: Number,
+          default: null,
+        },
+      },
+    },
     vehicle: {
       type: {
         type: String,
-        enum: ["basicAmbulance", "advancedAmbulance", "icuAmbulance", "airAmbulance"],
+        enum: ["bls", "als", "ccs", "auto", "bike"],
         default: null,
       },
       plateNumber: {

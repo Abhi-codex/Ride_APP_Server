@@ -1,4 +1,5 @@
 import Ride from "../models/Ride.js";
+import User from "../models/User.js";
 import { BadRequestError, NotFoundError } from "../errors/index.js";
 import { StatusCodes } from "http-status-codes";
 import {
@@ -13,6 +14,14 @@ export const createRide = async (req, res) => {
   if (!vehicle || !pickup || !drop) {
     throw new BadRequestError(
       "Ambulance type, pickup, and drop details are required"
+    );
+  }
+
+  // Validate ambulance type with new types
+  const validVehicleTypes = ["bls", "als", "ccs", "auto", "bike"];
+  if (!validVehicleTypes.includes(vehicle)) {
+    throw new BadRequestError(
+      "Invalid ambulance type. Valid types: bls (Basic Life Support), als (Advanced Life Support), ccs (Critical Care Support), auto (Auto Ambulance), bike (Bike Safety Unit)"
     );
   }
 
@@ -39,7 +48,7 @@ export const createRide = async (req, res) => {
 
   try {
     const distance = calculateDistance(pickupLat, pickupLon, dropLat, dropLon);
-    const fare = calculateFare(distance, vehicle);
+    const fare = calculateFare(distance);
 
     const ride = new Ride({
       vehicle,
@@ -86,6 +95,30 @@ export const acceptRide = async (req, res) => {
       throw new BadRequestError(
         "Emergency call is no longer available for assignment"
       );
+    }
+
+    // Get driver details to check for hospital affiliation
+    const driver = await User.findById(driverId);
+    if (!driver) {
+      throw new BadRequestError("Driver not found");
+    }
+
+    // Validate driver has the required ambulance type
+    if (driver.vehicle.type !== ride.vehicle) {
+      throw new BadRequestError(
+        `Driver's ambulance type (${driver.vehicle.type}) does not match required type (${ride.vehicle})`
+      );
+    }
+
+    // Recalculate fare if driver is hospital-affiliated with custom formula
+    if (driver.hospitalAffiliation?.isAffiliated && 
+        driver.hospitalAffiliation?.customFareFormula?.baseFare) {
+      const recalculatedFare = calculateFare(
+        ride.distance, 
+        ride.vehicle, 
+        driver.hospitalAffiliation.customFareFormula
+      );
+      ride.fare = recalculatedFare[ride.vehicle];
     }
 
     ride.rider = driverId;
@@ -172,9 +205,32 @@ export const getMyRides = async (req, res) => {
 
 export const getAvailableRides = async (req, res) => {
   try {
-    const availableRides = await Ride.find({
-      status: "SEARCHING_FOR_RIDER",
-    })
+    const { vehicle } = req.query;
+    const driverId = req.user.id;
+
+    // Build query for available rides
+    const query = { status: "SEARCHING_FOR_RIDER" };
+    
+    // Filter by ambulance type if specified
+    if (vehicle) {
+      const validVehicleTypes = ["bls", "als", "ccs", "auto", "bike"];
+      if (!validVehicleTypes.includes(vehicle)) {
+        throw new BadRequestError(
+          "Invalid ambulance type. Valid types: bls, als, ccs, auto, bike"
+        );
+      }
+      query.vehicle = vehicle;
+    }
+
+    // If driver is authenticated, filter by their ambulance type
+    if (req.user.role === "driver") {
+      const driver = await User.findById(driverId);
+      if (driver && driver.vehicle?.type) {
+        query.vehicle = driver.vehicle.type;
+      }
+    }
+
+    const availableRides = await Ride.find(query)
       .populate("customer", "phone")
       .sort({ createdAt: -1 });
 

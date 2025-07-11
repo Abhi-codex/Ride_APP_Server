@@ -85,7 +85,7 @@ export const refreshToken = async (req, res) => {
 export const updateProfile = async (req, res) => {
   try {
     const userId = req.user.id;
-    const { name, email, vehicle } = req.body;
+    const { name, email, vehicle, hospitalAffiliation } = req.body;
 
     const user = await User.findById(userId);
     if (!user) {
@@ -102,11 +102,11 @@ export const updateProfile = async (req, res) => {
     if (user.role === "driver" && vehicle) {
       const { type, plateNumber, model, licenseNumber, certificationLevel } = vehicle;
 
-      // Validate ambulance type
-      const validTypes = ["basicAmbulance", "advancedAmbulance", "icuAmbulance", "airAmbulance"];
+      // Validate ambulance type with new types
+      const validTypes = ["bls", "als", "ccs", "auto", "bike"];
       if (type && !validTypes.includes(type)) {
         throw new BadRequestError(
-          "Invalid ambulance type. Valid types: basicAmbulance, advancedAmbulance, icuAmbulance, airAmbulance"
+          "Invalid ambulance type. Valid types: bls (Basic Life Support), als (Advanced Life Support), ccs (Critical Care Support), auto (Auto Ambulance), bike (Bike Safety Unit)"
         );
       }
 
@@ -124,6 +124,32 @@ export const updateProfile = async (req, res) => {
       if (model) updateData["vehicle.model"] = model;
       if (licenseNumber) updateData["vehicle.licenseNumber"] = licenseNumber;
       if (certificationLevel) updateData["vehicle.certificationLevel"] = certificationLevel;
+    }
+
+    // Handle hospital affiliation for drivers
+    if (user.role === "driver" && hospitalAffiliation) {
+      const { 
+        isAffiliated, 
+        hospitalName, 
+        hospitalId, 
+        hospitalAddress, 
+        employeeId,
+        customFareFormula 
+      } = hospitalAffiliation;
+
+      if (isAffiliated !== undefined) updateData["hospitalAffiliation.isAffiliated"] = isAffiliated;
+      if (hospitalName) updateData["hospitalAffiliation.hospitalName"] = hospitalName;
+      if (hospitalId) updateData["hospitalAffiliation.hospitalId"] = hospitalId;
+      if (hospitalAddress) updateData["hospitalAffiliation.hospitalAddress"] = hospitalAddress;
+      if (employeeId) updateData["hospitalAffiliation.employeeId"] = employeeId;
+
+      // Handle custom fare formula for hospital-affiliated drivers
+      if (customFareFormula) {
+        const { baseFare, perKmRate, minimumFare } = customFareFormula;
+        if (baseFare !== undefined) updateData["hospitalAffiliation.customFareFormula.baseFare"] = baseFare;
+        if (perKmRate !== undefined) updateData["hospitalAffiliation.customFareFormula.perKmRate"] = perKmRate;
+        if (minimumFare !== undefined) updateData["hospitalAffiliation.customFareFormula.minimumFare"] = minimumFare;
+      }
     }
 
     // Update the user

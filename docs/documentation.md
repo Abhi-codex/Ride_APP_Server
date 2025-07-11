@@ -7,10 +7,63 @@ This is the comprehensive documentation for the Emergency Medical Services (Ambu
 This system has been converted from a ride-booking platform to a specialized ambulance booking system for emergency medical services. The system supports:
 
 - **Patients**: Users who need emergency medical transport
-- **Drivers**: Ambulance drivers with EMT certifications
+- **Drivers**: Ambulance drivers with EMT certifications (Independent or Hospital-affiliated)
 - **Real-time tracking**: Live location updates and status changes
-- **Multiple ambulance types**: From basic to air ambulances
+- **Multiple ambulance types**: BLS, ALS, CCS, Auto, and Bike Safety Units
 - **Rating system**: Service quality feedback
+- **Hospital Integration**: Support for hospital-affiliated drivers with custom fare formulas
+
+## 🚑 Ambulance Types
+
+The system supports 5 specialized ambulance types, each designed for specific medical emergency scenarios:
+
+### 1. BLS - Basic Life Support
+- **Code**: `bls`
+- **Description**: Standard ambulance with basic life support equipment
+- **Equipment**: Oxygen, defibrillator, basic medications, stretcher
+- **Certification Required**: EMT-Basic minimum
+- **Use Cases**: Non-critical patient transport, basic medical emergencies
+
+### 2. ALS - Advanced Life Support  
+- **Code**: `als`
+- **Description**: Advanced ambulance with cardiac monitoring and medications
+- **Equipment**: Cardiac monitor, advanced airway management, IV capabilities, medications
+- **Certification Required**: EMT-Intermediate or EMT-Paramedic
+- **Use Cases**: Cardiac emergencies, respiratory distress, serious trauma
+
+### 3. CCS - Critical Care Support
+- **Code**: `ccs` 
+- **Description**: ICU-level ambulance for critically ill patients
+- **Equipment**: Ventilator, multiple IV pumps, advanced cardiac support, critical care monitoring
+- **Certification Required**: Critical Care certification
+- **Use Cases**: ICU transfers, post-surgical transport, critical patient inter-facility transfers
+
+### 4. Auto Ambulance (Specially Designed)
+- **Code**: `auto`
+- **Description**: Compact ambulance designed for urban areas with traffic constraints
+- **Equipment**: Basic to intermediate medical equipment in compact design
+- **Certification Required**: EMT-Basic to EMT-Intermediate
+- **Use Cases**: Urban emergencies, traffic-congested areas, quick response needs
+
+### 5. Bike Safety Unit (Specially Designed)
+- **Code**: `bike`
+- **Description**: Emergency response motorcycle for rapid first aid and assessment
+- **Equipment**: First aid kit, AED, oxygen, basic medications, communication equipment
+- **Certification Required**: EMT-Basic minimum + motorcycle license
+- **Use Cases**: Traffic jams, crowded areas, initial assessment, rapid response
+
+## 🏥 Driver Types & Fare Calculation
+
+### Independent Drivers
+- Use standard platform fare calculation
+- Receive standard commission structure
+- Manage their own ambulance operations
+
+### Hospital-Affiliated Drivers  
+- Connected to specific hospitals
+- Use hospital's custom fare formula (if provided)
+- Hospital manages fare structure and billing
+- Platform facilitates booking and tracking
 
 ## 🔧 Technical Stack
 
@@ -107,20 +160,33 @@ Updates user profile with detailed information. (Requires authentication)
   "name": "Dr. Sarah EMT",
   "email": "sarah.emt@hospital.com",
   "vehicle": {
-    "type": "advancedAmbulance",
+    "type": "als",
     "plateNumber": "AMB123",
     "model": "Mercedes Sprinter",
     "licenseNumber": "EMT-123456",
     "certificationLevel": "EMT-Paramedic"
+  },
+  "hospitalAffiliation": {
+    "isAffiliated": true,
+    "hospitalName": "City General Hospital",
+    "hospitalId": "CGH001",
+    "hospitalAddress": "123 Hospital Street, City",
+    "employeeId": "EMP789",
+    "customFareFormula": {
+      "baseFare": 100,
+      "perKmRate": 25,
+      "minimumFare": 180
+    }
   }
 }
 ```
 
 **Valid Ambulance Types:**
-- `basicAmbulance`
-- `advancedAmbulance`
-- `icuAmbulance`
-- `airAmbulance`
+- `bls` - Basic Life Support
+- `als` - Advanced Life Support  
+- `ccs` - Critical Care Support
+- `auto` - Auto Ambulance (specially designed)
+- `bike` - Bike Safety Unit (specially designed)
 
 **Valid Certification Levels:**
 - `EMT-Basic`
@@ -140,11 +206,23 @@ Updates user profile with detailed information. (Requires authentication)
     "email": "sarah.emt@hospital.com",
     "isOnline": false,
     "vehicle": {
-      "type": "advancedAmbulance",
+      "type": "als",
       "plateNumber": "AMB123",
       "model": "Mercedes Sprinter",
       "licenseNumber": "EMT-123456",
       "certificationLevel": "EMT-Paramedic"
+    },
+    "hospitalAffiliation": {
+      "isAffiliated": true,
+      "hospitalName": "City General Hospital",
+      "hospitalId": "CGH001", 
+      "hospitalAddress": "123 Hospital Street, City",
+      "employeeId": "EMP789",
+      "customFareFormula": {
+        "baseFare": 100,
+        "perKmRate": 25,
+        "minimumFare": 180
+      }
     },
     "createdAt": "2021-07-21T10:30:00.000Z",
     "updatedAt": "2021-07-21T11:00:00.000Z"
@@ -169,11 +247,23 @@ Retrieves current user's profile information. (Requires authentication)
     "email": "sarah.emt@hospital.com",
     "isOnline": false,
     "vehicle": {
-      "type": "advancedAmbulance",
+      "type": "als",
       "plateNumber": "AMB123",
       "model": "Mercedes Sprinter",
       "licenseNumber": "EMT-123456",
       "certificationLevel": "EMT-Paramedic"
+    },
+    "hospitalAffiliation": {
+      "isAffiliated": true,
+      "hospitalName": "City General Hospital",
+      "hospitalId": "CGH001", 
+      "hospitalAddress": "123 Hospital Street, City",
+      "employeeId": "EMP789",
+      "customFareFormula": {
+        "baseFare": 100,
+        "perKmRate": 25,
+        "minimumFare": 180
+      }
     },
     "createdAt": "2021-07-21T10:30:00.000Z",
     "updatedAt": "2021-07-21T11:00:00.000Z"
@@ -199,7 +289,7 @@ Creates a new emergency call request (Patients only).
 **Request Body:**
 ```json
 {
-  "vehicle": "advancedAmbulance",
+  "vehicle": "als",
   "pickup": {
     "address": "123 Emergency St",
     "latitude": 40.7128,
@@ -214,10 +304,15 @@ Creates a new emergency call request (Patients only).
 ```
 
 **Valid Ambulance Types:**
-- `basicAmbulance` - Basic life support (₹50 base + ₹15/km)
-- `advancedAmbulance` - Advanced life support (₹80 base + ₹20/km)
-- `icuAmbulance` - Intensive care (₹120 base + ₹30/km)
-- `airAmbulance` - Air medical transport (₹500 base + ₹100/km)
+- `bls` - Basic Life Support (₹50 base + ₹15/km)
+- `als` - Advanced Life Support (₹80 base + ₹20/km)
+- `ccs` - Critical Care Support (₹120 base + ₹30/km)
+- `auto` - Auto Ambulance (₹40 base + ₹12/km) - Specially designed
+- `bike` - Bike Safety Unit (₹30 base + ₹10/km) - Specially designed
+
+**Fare Calculation:**
+- **Independent Drivers**: Use standard fare formula above
+- **Hospital-Affiliated Drivers**: Use custom hospital fare formula if provided
 
 **Response:**
 ```json
@@ -225,7 +320,7 @@ Creates a new emergency call request (Patients only).
   "message": "Emergency call created successfully",
   "ride": {
     "_id": "60f7b3b3b3b3b3b3b3b3b3b3",
-    "vehicle": "advancedAmbulance",
+    "vehicle": "als",
     "distance": 15.5,
     "fare": 390,
     "pickup": {
@@ -253,6 +348,11 @@ Creates a new emergency call request (Patients only).
 
 Allows an ambulance driver to accept an emergency call.
 
+**Important Notes:**
+- Driver's ambulance type must match the requested ambulance type
+- If driver is hospital-affiliated with a custom fare formula, the fare will be recalculated automatically
+- Hospital-affiliated drivers use their hospital's pricing instead of platform pricing
+
 **Response:**
 ```json
 {
@@ -260,6 +360,7 @@ Allows an ambulance driver to accept an emergency call.
   "ride": {
     "_id": "60f7b3b3b3b3b3b3b3b3b3b3",
     "status": "START",
+    "fare": 420,
     "rider": {
       "_id": "60f7b3b3b3b3b3b3b3b3b3b5",
       "name": "Dr. Smith",
@@ -347,7 +448,10 @@ Retrieves emergency calls for the authenticated user (both as patient and driver
 ### 5. Get Available Emergency Calls (Driver Only)
 **GET** `/ride/driverrides`
 
-Retrieves emergency calls available for assignment to drivers.
+Retrieves emergency calls available for assignment to drivers. Automatically filters by driver's ambulance type.
+
+**Query Parameters:**
+- `vehicle` (optional): Filter by specific ambulance type (bls, als, ccs, auto, bike)
 
 **Response:**
 ```json
@@ -357,7 +461,7 @@ Retrieves emergency calls available for assignment to drivers.
   "rides": [
     {
       "_id": "60f7b3b3b3b3b3b3b3b3b3b3",
-      "vehicle": "icuAmbulance",
+      "vehicle": "ccs",
       "distance": 8.2,
       "fare": 446,
       "pickup": {

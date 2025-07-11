@@ -12,12 +12,14 @@ export const calculateDistance = (lat1, lon1, lat2, lon2) => {
   return R * c;
 };
 
-export const calculateFare = (distance) => {
+export const calculateFare = (distance, ambulanceType = null, hospitalFareFormula = null) => {
+  // Default rate structure for independent drivers
   const rateStructure = {
-    basicAmbulance: { baseFare: 50, perKmRate: 15, minimumFare: 100 },
-    advancedAmbulance: { baseFare: 80, perKmRate: 20, minimumFare: 150 },
-    icuAmbulance: { baseFare: 120, perKmRate: 30, minimumFare: 200 },
-    airAmbulance: { baseFare: 500, perKmRate: 100, minimumFare: 800 },
+    bls: { baseFare: 50, perKmRate: 15, minimumFare: 100 }, // Basic Life Support
+    als: { baseFare: 80, perKmRate: 20, minimumFare: 150 }, // Advanced Life Support
+    ccs: { baseFare: 120, perKmRate: 30, minimumFare: 200 }, // Critical Care Support
+    auto: { baseFare: 40, perKmRate: 12, minimumFare: 80 }, // Auto Ambulance
+    bike: { baseFare: 30, perKmRate: 10, minimumFare: 60 }, // Bike Safety Unit
   };
 
   const fareCalculation = (baseFare, perKmRate, minimumFare) => {
@@ -25,26 +27,43 @@ export const calculateFare = (distance) => {
     return Math.max(calculatedFare, minimumFare);
   };
 
+  // If hospital fare formula is provided (for affiliated drivers), use it for specific ambulance type
+  if (hospitalFareFormula && ambulanceType) {
+    return {
+      [ambulanceType]: fareCalculation(
+        hospitalFareFormula.baseFare || rateStructure[ambulanceType].baseFare,
+        hospitalFareFormula.perKmRate || rateStructure[ambulanceType].perKmRate,
+        hospitalFareFormula.minimumFare || rateStructure[ambulanceType].minimumFare
+      )
+    };
+  }
+
+  // Calculate fare for all ambulance types (independent drivers)
   return {
-    basicAmbulance: fareCalculation(
-      rateStructure.basicAmbulance.baseFare,
-      rateStructure.basicAmbulance.perKmRate,
-      rateStructure.basicAmbulance.minimumFare
+    bls: fareCalculation(
+      rateStructure.bls.baseFare,
+      rateStructure.bls.perKmRate,
+      rateStructure.bls.minimumFare
     ),
-    advancedAmbulance: fareCalculation(
-      rateStructure.advancedAmbulance.baseFare,
-      rateStructure.advancedAmbulance.perKmRate,
-      rateStructure.advancedAmbulance.minimumFare
+    als: fareCalculation(
+      rateStructure.als.baseFare,
+      rateStructure.als.perKmRate,
+      rateStructure.als.minimumFare
     ),
-    icuAmbulance: fareCalculation(
-      rateStructure.icuAmbulance.baseFare,
-      rateStructure.icuAmbulance.perKmRate,
-      rateStructure.icuAmbulance.minimumFare
+    ccs: fareCalculation(
+      rateStructure.ccs.baseFare,
+      rateStructure.ccs.perKmRate,
+      rateStructure.ccs.minimumFare
     ),
-    airAmbulance: fareCalculation(
-      rateStructure.airAmbulance.baseFare,
-      rateStructure.airAmbulance.perKmRate,
-      rateStructure.airAmbulance.minimumFare
+    auto: fareCalculation(
+      rateStructure.auto.baseFare,
+      rateStructure.auto.perKmRate,
+      rateStructure.auto.minimumFare
+    ),
+    bike: fareCalculation(
+      rateStructure.bike.baseFare,
+      rateStructure.bike.perKmRate,
+      rateStructure.bike.minimumFare
     ),
   };
 };

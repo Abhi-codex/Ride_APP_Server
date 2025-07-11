@@ -3,11 +3,16 @@ import mongoose from "mongoose";
 const connectDB = async (url) => {
   try {
     const options = {
-      serverSelectionTimeoutMS: 10000,
+      serverSelectionTimeoutMS: 30000, 
       socketTimeoutMS: 45000,
+      connectTimeoutMS: 30000,
       maxPoolSize: 10,
       minPoolSize: 5,
       maxIdleTimeMS: 300000,
+      useNewUrlParser: true,
+      useUnifiedTopology: true,
+      retryWrites: true,
+      w: "majority",
     };
 
     console.log("🔄 Attempting to connect to MongoDB...");
@@ -29,17 +34,30 @@ const connectDB = async (url) => {
     });
 
     return conn;
-  } catch (error) {
+  }  catch (error) {
     console.error("❌ MongoDB connection failed:", error.message);
-
+    
+    if (error.name === 'MongoServerSelectionError') {
+      console.error("⚠️ Could not connect to any MongoDB server in the replica set. Please check:");
+      console.error("   - Your network connection");
+      console.error("   - MongoDB Atlas service status");
+      console.error("   - IP whitelist settings in MongoDB Atlas");
+    }
+    
     console.log("🔄 Will retry MongoDB connection in background...");
 
-    setTimeout(() => {
-      console.log("🔄 Retrying MongoDB connection...");
-      connectDB(url);
-    }, 10000);
 
-    throw error;
+    return new Promise((_, reject) => {
+      setTimeout(() => {
+        console.log("🔄 Retrying MongoDB connection...");
+        connectDB(url).then(
+          conn => mongoose.connection.emit("reconnected", conn),
+          err => console.error("❌ Retry failed:", err.message)
+        );
+      }, 15000);
+      
+      reject(error);
+    });
   }
 };
 
