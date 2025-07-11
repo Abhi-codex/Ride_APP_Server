@@ -52,6 +52,22 @@ const rideSchema = new Schema(
       max: 5,
       default: null,
     },
+    emergency: {
+      type: {
+        type: String,
+        enum: ['cardiac', 'trauma', 'respiratory', 'neurological', 'pediatric', 'obstetric', 'psychiatric', 'burns', 'poisoning', 'general'],
+        default: null,
+      },
+      name: {
+        type: String,
+        default: null,
+      },
+      priority: {
+        type: String,
+        enum: ['low', 'medium', 'high', 'critical'],
+        default: null,
+      },
+    },
   },
   {
     timestamps: true,

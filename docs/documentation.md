@@ -81,6 +81,38 @@ The system supports 5 specialized ambulance types, each designed for specific me
 - **Health Check**: `/health`
 - **Database Status**: `/db-status`
 
+## 🚨 Emergency Service Features
+
+### Emergency Classification
+- **Emergency Types**: cardiac, trauma, respiratory, neurological, pediatric, obstetric, psychiatric, burns, poisoning, general
+- **Priority Levels**: critical, high, medium, low
+- **Special Instructions**: Free-text field for specific medical requirements
+
+### Driver Specializations
+Drivers can specify medical specializations that match emergency types:
+- **Available Specializations**: cardiac, trauma, respiratory, neurological, pediatric, obstetric, psychiatric, burns, poisoning, general
+- **Multiple Specializations**: Drivers can have multiple areas of expertise
+- **Validation**: Specializations are validated against the same enum as emergency types
+
+### Smart Emergency Matching
+The system now intelligently matches drivers to emergency calls:
+
+#### Compatibility Scoring System
+- **Perfect Match (100 points)**: Driver specializes in the exact emergency type
+- **Related Specializations (25 points each)**: Cross-specialty matching (e.g., cardiac → respiratory)
+- **General Practice (20 points)**: Drivers with "general" specialization get bonus for all calls
+- **Priority Bonus**: Additional points based on emergency priority level
+  - Critical: +50 points
+  - High: +30 points
+  - Medium: +15 points
+  - Low: +5 points
+
+#### Matching Logic
+- **Recommended Calls**: Rides with compatibility score ≥ 50 points
+- **Emergency Match**: Perfect specialization match (100+ points)
+- **Smart Sorting**: Rides sorted by compatibility score, then by creation time
+- **Cross-Specialty Support**: Related specializations provide partial matching
+
 ## 🔐 Authentication System
 
 ### Authentication Endpoints
@@ -299,9 +331,35 @@ Creates a new emergency call request (Patients only).
     "address": "City General Hospital",
     "latitude": 40.7589,
     "longitude": -73.9851
+  },
+  "emergency": {
+    "type": "cardiac",
+    "name": "Heart Attack",
+    "priority": "critical"
   }
 }
 ```
+
+**Emergency Type System:**
+The frontend now includes a comprehensive emergency classification system that helps patients select appropriate ambulance types and hospitals. The emergency object is optional but recommended for better service matching.
+
+**Emergency Categories:**
+- `cardiac` - Heart & Circulation emergencies
+- `trauma` - Trauma & Injuries  
+- `respiratory` - Breathing Problems
+- `neurological` - Brain & Nervous System
+- `pediatric` - Child Emergencies
+- `obstetric` - Pregnancy & Delivery
+- `psychiatric` - Mental Health
+- `burns` - Burn Injuries
+- `poisoning` - Poisoning & Overdose
+- `general` - General Medical
+
+**Emergency Priority Levels:**
+- `critical` - Life-threatening emergencies requiring immediate response
+- `high` - Serious emergencies needing urgent care
+- `medium` - Important medical situations
+- `low` - Non-urgent medical transport
 
 **Valid Ambulance Types:**
 - `bls` - Basic Life Support (₹50 base + ₹15/km)
@@ -448,20 +506,23 @@ Retrieves emergency calls for the authenticated user (both as patient and driver
 ### 5. Get Available Emergency Calls (Driver Only)
 **GET** `/ride/driverrides`
 
-Retrieves emergency calls available for assignment to drivers. Automatically filters by driver's ambulance type.
+Retrieves emergency calls available for assignment to drivers. Automatically filters by driver's ambulance type and provides intelligent emergency matching based on driver specializations.
 
 **Query Parameters:**
 - `vehicle` (optional): Filter by specific ambulance type (bls, als, ccs, auto, bike)
+- `emergency` (optional): Filter by emergency type
 
 **Response:**
 ```json
 {
   "message": "Available emergency calls retrieved successfully",
   "count": 3,
+  "driverSpecializations": ["cardiac", "general"],
+  "emergencyMatching": true,
   "rides": [
     {
       "_id": "60f7b3b3b3b3b3b3b3b3b3b3",
-      "vehicle": "ccs",
+      "vehicle": "als",
       "distance": 8.2,
       "fare": 446,
       "pickup": {
@@ -474,12 +535,50 @@ Retrieves emergency calls available for assignment to drivers. Automatically fil
         "latitude": 40.7400,
         "longitude": -73.9900
       },
+      "emergency": {
+        "type": "cardiac",
+        "priority": "critical",
+        "specialInstructions": "Patient experiencing chest pain"
+      },
       "customer": {
         "_id": "60f7b3b3b3b3b3b3b3b3b3b6",
         "phone": "+5551234567"
       },
       "status": "SEARCHING_FOR_RIDER",
+      "compatibilityScore": 150,
+      "isRecommended": true,
+      "emergencyMatch": true,
       "createdAt": "2021-07-21T11:00:00.000Z"
+    },
+    {
+      "_id": "60f7b3b3b3b3b3b3b3b3b3b4",
+      "vehicle": "als",
+      "distance": 12.5,
+      "fare": 520,
+      "pickup": {
+        "address": "789 Main Street",
+        "latitude": 40.7200,
+        "longitude": -74.0200
+      },
+      "drop": {
+        "address": "City General Hospital",
+        "latitude": 40.7500,
+        "longitude": -73.9800
+      },
+      "emergency": {
+        "type": "trauma",
+        "priority": "high",
+        "specialInstructions": "Motor vehicle accident"
+      },
+      "customer": {
+        "_id": "60f7b3b3b3b3b3b3b3b3b3b7",
+        "phone": "+5559876543"
+      },
+      "status": "SEARCHING_FOR_RIDER",
+      "compatibilityScore": 50,
+      "isRecommended": true,
+      "emergencyMatch": false,
+      "createdAt": "2021-07-21T11:05:00.000Z"
     }
   ]
 }
@@ -831,8 +930,29 @@ All endpoints return consistent error responses:
     plateNumber: String,
     model: String,
     licenseNumber: String, // EMT license
-    certificationLevel: String // EMT certification
+    certificationLevel: String, // EMT certification
+    specializations: [String] // Array of emergency specializations (e.g., ["cardiac", "trauma", "pediatric"])
   },
+  createdAt: Date,
+  updatedAt: Date
+}
+```
+
+#### Hospital Model (NEW)
+```javascript
+{
+  _id: ObjectId,
+  name: String,
+  location: {
+    latitude: Number,
+    longitude: Number
+  },
+  address: String,
+  phoneNumber: String,
+  emergencyServices: [String], // Array of emergency capabilities
+  placeId: String, // Google Places ID
+  rating: Number,
+  isVerified: Boolean,
   createdAt: Date,
   updatedAt: Date
 }
@@ -860,6 +980,12 @@ All endpoints return consistent error responses:
   status: String, // Call status
   otp: String, // 4-digit verification code
   rating: Number, // 1-5 rating (optional)
+  emergency: { // NEW emergency context
+    type: String, // Emergency type ID (e.g., "heart_attack")
+    name: String, // Human-readable name (e.g., "Heart Attack")
+    priority: String, // "low", "medium", "high", "critical"
+    category: String // Emergency category (e.g., "cardiac")
+  },
   createdAt: Date,
   updatedAt: Date
 }
@@ -1385,3 +1511,204 @@ const handleDriverProfileSubmit = async (event) => {
   }
 };
 ```
+
+## 🏥 Hospital Management System
+
+All hospital endpoints are prefixed with `/hospitals` and provide comprehensive hospital discovery and management.
+
+### 1. Search Hospitals (Google Places API)
+**GET** `/hospitals/search`
+
+Search for hospitals near a location using Google Places API with emergency-specific filtering.
+
+**Query Parameters:**
+- `lat` (required): Latitude coordinate
+- `lng` (required): Longitude coordinate  
+- `emergency` (optional): Emergency type for service filtering
+- `radius` (optional): Search radius in meters (default: 10000)
+
+**Example:** `/hospitals/search?lat=40.7128&lng=-74.0060&emergency=cardiac&radius=15000`
+
+**Emergency Types for Filtering:**
+- `cardiac` - Heart & cardiovascular emergencies
+- `trauma` - Trauma & injuries (prioritizes trauma centers)
+- `respiratory` - Breathing problems
+- `neurological` - Brain and nervous system (prioritizes neurology)
+- `pediatrics` - Specialized child emergency care
+- `obstetrics` - Pregnancy and delivery services
+- `burns` - Burn injuries (prioritizes burn units)
+- `psychiatry` - Mental health emergencies
+- `intensive_care` - Critical care capabilities
+- `surgery` - Surgical emergency capabilities
+- `blood_bank` - Blood transfusion services
+
+**Response:**
+```json
+{
+  "message": "Hospitals retrieved successfully",
+  "count": 5,
+  "hospitals": [
+    {
+      "id": "ChIJN1t_tDeuEmsRUsoyG83frY4",
+      "name": "City General Hospital",
+      "latitude": 40.7589,
+      "longitude": -73.9851,
+      "rating": 4.2,
+      "placeId": "ChIJN1t_tDeuEmsRUsoyG83frY4",
+      "address": "123 Hospital Ave, New York, NY",
+      "emergencyServices": ["emergency_room", "cardiology", "intensive_care"],
+      "distance": 2.5,
+      "isOpen": true,
+      "priceLevel": null
+    }
+  ],
+  "emergency": "cardiac",
+  "searchRadius": 15000
+}
+```
+
+### 2. Get Hospital Details
+**GET** `/hospitals/details/:placeId`
+
+Get detailed information about a specific hospital using Google Places API.
+
+**Parameters:**
+- `placeId`: Google Places ID of the hospital
+
+**Response:**
+```json
+{
+  "message": "Hospital details retrieved successfully",
+  "hospital": {
+    "placeId": "ChIJN1t_tDeuEmsRUsoyG83frY4",
+    "name": "City General Hospital",
+    "address": "123 Hospital Ave, New York, NY 10001",
+    "latitude": 40.7589,
+    "longitude": -73.9851,
+    "rating": 4.2,
+    "phoneNumber": "+1 (212) 555-0123",
+    "website": "https://citygeneralhospital.com",
+    "openingHours": [
+      "Monday: Open 24 hours",
+      "Tuesday: Open 24 hours",
+      "Wednesday: Open 24 hours",
+      "Thursday: Open 24 hours",
+      "Friday: Open 24 hours",
+      "Saturday: Open 24 hours",
+      "Sunday: Open 24 hours"
+    ],
+    "isOpen": true
+  }
+}
+```
+
+### 3. Get Local Hospitals Database
+**GET** `/hospitals`
+
+Retrieve hospitals from the local database with optional filtering.
+
+**Query Parameters:**
+- `lat` (optional): Latitude for distance calculation
+- `lng` (optional): Longitude for distance calculation
+- `radius` (optional): Search radius in meters (default: 50000)
+- `emergency` (optional): Filter by emergency service capability
+
+**Response:**
+```json
+{
+  "message": "Hospitals retrieved successfully",
+  "count": 3,
+  "hospitals": [
+    {
+      "_id": "60f7b3b3b3b3b3b3b3b3b3b3",
+      "name": "Metro Medical Center",
+      "location": {
+        "latitude": 40.7300,
+        "longitude": -74.0100
+      },
+      "emergencyServices": ["emergency_room", "trauma_center", "surgery"],
+      "rating": 4.5,
+      "phoneNumber": "+1 (212) 555-0456",
+      "address": "456 Medical Plaza, New York, NY",
+      "isVerified": true,
+      "distance": 3.2
+    }
+  ]
+}
+```
+
+### 4. Create Hospital (Authenticated)
+**POST** `/hospitals`
+
+Add a new hospital to the local database. (Requires authentication)
+
+**Request Body:**
+```json
+{
+  "name": "New Medical Center",
+  "latitude": 40.7400,
+  "longitude": -73.9900,
+  "address": "789 Health Street, New York, NY",
+  "emergencyServices": ["emergency_room", "cardiology", "neurology"],
+  "placeId": "ChIJAbCdEfGhIjKlMnOpQrSt",
+  "rating": 4.0,
+  "phoneNumber": "+1 (212) 555-0789"
+}
+```
+
+**Response:**
+```json
+{
+  "message": "Hospital created successfully",
+  "hospital": {
+    "_id": "60f7b3b3b3b3b3b3b3b3b3b4",
+    "name": "New Medical Center",
+    "location": {
+      "latitude": 40.7400,
+      "longitude": -73.9900
+    },
+    "emergencyServices": ["emergency_room", "cardiology", "neurology"],
+    "placeId": "ChIJAbCdEfGhIjKlMnOpQrSt",
+    "rating": 4.0,
+    "phoneNumber": "+1 (212) 555-0789",
+    "address": "789 Health Street, New York, NY",
+    "isVerified": false,
+    "createdAt": "2021-07-21T10:30:00.000Z"
+  }
+}
+```
+
+### Hospital Emergency Services
+
+The system recognizes these emergency service capabilities:
+
+- **`emergency_room`** - General emergency services (all hospitals)
+- **`cardiology`** - Heart & cardiovascular emergencies
+- **`trauma_center`** - Major trauma and accident treatment
+- **`neurology`** - Brain and nervous system treatment
+- **`pediatrics`** - Specialized child emergency care
+- **`obstetrics`** - Pregnancy and delivery services
+- **`burn_unit`** - Specialized burn injury treatment
+- **`psychiatry`** - Mental health emergency services
+- **`intensive_care`** - Critical care capabilities
+- **`surgery`** - Surgical emergency capabilities
+- **`blood_bank`** - Blood transfusion services
+
+### Google Places API Integration
+
+**Required Environment Variables:**
+```env
+GOOGLE_PLACES_API_KEY=your_google_places_api_key_here
+```
+
+**Setup Steps:**
+1. Create Google Cloud Console project
+2. Enable Places API, Maps JavaScript API, Geocoding API
+3. Create API key and restrict to your application
+4. Add API key to environment variables
+
+**API Quotas & Limits:**
+- Hospital search: Uses Places Nearby Search API
+- Hospital details: Uses Places Details API
+- Recommended: Set daily quotas to prevent overuse
+- Consider caching results to reduce API calls

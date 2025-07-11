@@ -88,6 +88,10 @@ const userSchema = new Schema(
         enum: ["EMT-Basic", "EMT-Intermediate", "EMT-Paramedic", "Critical Care"],
         default: null,
       },
+      specializations: [{
+        type: String,
+        enum: ["cardiac", "trauma", "respiratory", "neurological", "pediatric", "obstetric", "psychiatric", "burns", "poisoning", "general"],
+      }],
     },
   },
   {

@@ -13,6 +13,7 @@ import authMiddleware from './middleware/authentication.js';
 import authRouter from './routes/auth.js';
 import rideRouter from './routes/ride.js';
 import driverRouter from './routes/driver.js';
+import hospitalRouter from './routes/hospital.js';
 
 import handleSocketConnection from './controllers/sockets.js';
 
@@ -83,6 +84,7 @@ app.get('/db-status', (req, res) => {
 app.use("/auth", authRouter);
 app.use("/ride", authMiddleware, rideRouter);
 app.use("/driver", authMiddleware, driverRouter);
+app.use("/hospitals", hospitalRouter);
 
 // Middleware
 app.use(notFoundMiddleware);
@@ -95,7 +97,8 @@ const start = async () => {
     console.log(`🌐 Network access: http://192.168.31.49:${PORT}`);
     console.log(`📍 Health check: http://192.168.31.49:${PORT}/health`);
     console.log(`🔐 Auth endpoint: http://192.168.31.49:${PORT}/auth/signin`);
-    console.log(`� Emergency calls: http://192.168.31.49:${PORT}/ride/*`);
+    console.log(`🏥 Hospital search: http://192.168.31.49:${PORT}/hospitals/*`);
+    console.log(`🚨 Emergency calls: http://192.168.31.49:${PORT}/ride/*`);
     console.log(`👨‍⚕️ Driver endpoints: http://192.168.31.49:${PORT}/driver/*`);
   });
 

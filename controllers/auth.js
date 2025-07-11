@@ -100,7 +100,7 @@ export const updateProfile = async (req, res) => {
 
     // Handle vehicle information for drivers
     if (user.role === "driver" && vehicle) {
-      const { type, plateNumber, model, licenseNumber, certificationLevel } = vehicle;
+      const { type, plateNumber, model, licenseNumber, certificationLevel, specializations } = vehicle;
 
       // Validate ambulance type with new types
       const validTypes = ["bls", "als", "ccs", "auto", "bike"];
@@ -118,12 +118,24 @@ export const updateProfile = async (req, res) => {
         );
       }
 
+      // Validate specializations
+      const validSpecializations = ["cardiac", "trauma", "respiratory", "neurological", "pediatric", "obstetric", "psychiatric", "burns", "poisoning", "general"];
+      if (specializations && Array.isArray(specializations)) {
+        const invalidSpecs = specializations.filter(spec => !validSpecializations.includes(spec));
+        if (invalidSpecs.length > 0) {
+          throw new BadRequestError(
+            `Invalid specializations: ${invalidSpecs.join(", ")}. Valid specializations: ${validSpecializations.join(", ")}`
+          );
+        }
+      }
+
       // Update vehicle information
       if (type) updateData["vehicle.type"] = type;
       if (plateNumber) updateData["vehicle.plateNumber"] = plateNumber;
       if (model) updateData["vehicle.model"] = model;
       if (licenseNumber) updateData["vehicle.licenseNumber"] = licenseNumber;
       if (certificationLevel) updateData["vehicle.certificationLevel"] = certificationLevel;
+      if (specializations) updateData["vehicle.specializations"] = specializations;
     }
 
     // Handle hospital affiliation for drivers

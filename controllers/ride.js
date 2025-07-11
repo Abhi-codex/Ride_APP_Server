@@ -9,7 +9,7 @@ import {
 } from "../utils/mapUtils.js";
 
 export const createRide = async (req, res) => {
-  const { vehicle, pickup, drop } = req.body;
+  const { vehicle, pickup, drop, emergency } = req.body;
 
   if (!vehicle || !pickup || !drop) {
     throw new BadRequestError(
@@ -23,6 +23,24 @@ export const createRide = async (req, res) => {
     throw new BadRequestError(
       "Invalid ambulance type. Valid types: bls (Basic Life Support), als (Advanced Life Support), ccs (Critical Care Support), auto (Auto Ambulance), bike (Bike Safety Unit)"
     );
+  }
+
+  // Validate emergency information if provided
+  if (emergency) {
+    const validEmergencyTypes = ['cardiac', 'trauma', 'respiratory', 'neurological', 'pediatric', 'obstetric', 'psychiatric', 'burns', 'poisoning', 'general'];
+    const validPriorities = ['low', 'medium', 'high', 'critical'];
+    
+    if (emergency.type && !validEmergencyTypes.includes(emergency.type)) {
+      throw new BadRequestError(
+        "Invalid emergency type. Valid types: " + validEmergencyTypes.join(", ")
+      );
+    }
+    
+    if (emergency.priority && !validPriorities.includes(emergency.priority)) {
+      throw new BadRequestError(
+        "Invalid emergency priority. Valid priorities: " + validPriorities.join(", ")
+      );
+    }
   }
 
   const {
@@ -61,6 +79,7 @@ export const createRide = async (req, res) => {
       },
       drop: { address: dropAddress, latitude: dropLat, longitude: dropLon },
       customer: patient.id,
+      emergency: emergency || null, // Include emergency information
       otp: generateOTP(),
     });
 
@@ -205,7 +224,7 @@ export const getMyRides = async (req, res) => {
 
 export const getAvailableRides = async (req, res) => {
   try {
-    const { vehicle } = req.query;
+    const { vehicle, emergency } = req.query;
     const driverId = req.user.id;
 
     // Build query for available rides
@@ -222,27 +241,110 @@ export const getAvailableRides = async (req, res) => {
       query.vehicle = vehicle;
     }
 
-    // If driver is authenticated, filter by their ambulance type
+    // Get driver information for filtering and scoring
+    let driver = null;
     if (req.user.role === "driver") {
-      const driver = await User.findById(driverId);
+      driver = await User.findById(driverId);
       if (driver && driver.vehicle?.type) {
         query.vehicle = driver.vehicle.type;
       }
     }
 
-    const availableRides = await Ride.find(query)
+    let availableRides = await Ride.find(query)
       .populate("customer", "phone")
       .sort({ createdAt: -1 });
+
+    // If driver is authenticated and has specializations, apply smart matching
+    if (driver && driver.vehicle?.specializations && driver.vehicle.specializations.length > 0) {
+      // Score and filter rides based on emergency type and driver specializations
+      availableRides = availableRides.map(ride => {
+        let compatibilityScore = 0;
+        let priorityBonus = 0;
+
+        // If ride has emergency information
+        if (ride.emergency && ride.emergency.type) {
+          const emergencyType = ride.emergency.type;
+          
+          // Perfect match: driver specializes in this emergency type
+          if (driver.vehicle.specializations.includes(emergencyType)) {
+            compatibilityScore += 100;
+          }
+          
+          // Related specializations (cross-specialty matching)
+          const relatedSpecs = getRelatedSpecializations(emergencyType);
+          const driverSpecs = driver.vehicle.specializations;
+          const relatedMatches = driverSpecs.filter(spec => relatedSpecs.includes(spec));
+          compatibilityScore += relatedMatches.length * 25;
+
+          // Priority bonus
+          if (ride.emergency.priority) {
+            const priorityScores = {
+              'critical': 50,
+              'high': 30,
+              'medium': 15,
+              'low': 5
+            };
+            priorityBonus = priorityScores[ride.emergency.priority] || 0;
+          }
+        }
+
+        // General practice bonus (if driver has "general" specialization)
+        if (driver.vehicle.specializations.includes('general')) {
+          compatibilityScore += 20;
+        }
+
+        // Calculate final score
+        const finalScore = compatibilityScore + priorityBonus;
+
+        return {
+          ...ride.toObject(),
+          compatibilityScore: finalScore,
+          isRecommended: finalScore >= 50, // Threshold for recommendation
+          emergencyMatch: compatibilityScore >= 100 // Perfect specialization match
+        };
+      });
+
+      // Sort by compatibility score (highest first) and then by creation time
+      availableRides.sort((a, b) => {
+        if (b.compatibilityScore !== a.compatibilityScore) {
+          return b.compatibilityScore - a.compatibilityScore;
+        }
+        return new Date(b.createdAt) - new Date(a.createdAt);
+      });
+
+      // Optional: Filter to only show rides with minimum compatibility
+      // availableRides = availableRides.filter(ride => ride.compatibilityScore >= 25);
+    }
 
     res.status(StatusCodes.OK).json({
       message: "Available emergency calls retrieved successfully",
       count: availableRides.length,
       rides: availableRides,
+      driverSpecializations: driver?.vehicle?.specializations || [],
+      emergencyMatching: driver?.vehicle?.specializations?.length > 0
     });
   } catch (error) {
     console.error("Error retrieving available rides:", error);
     throw new BadRequestError("Failed to retrieve available emergency calls");
   }
+};
+
+// Helper function to get related specializations for cross-specialty matching
+const getRelatedSpecializations = (emergencyType) => {
+  const relatedMap = {
+    'cardiac': ['general', 'respiratory'], // Cardiac issues often relate to breathing
+    'trauma': ['general', 'burns'], // Trauma can involve burns
+    'respiratory': ['cardiac', 'general'], // Breathing issues can affect heart
+    'neurological': ['general', 'trauma'], // Neurological can result from trauma
+    'pediatric': ['general', 'respiratory', 'trauma'], // Kids can have various issues
+    'obstetric': ['general'], // Pregnancy relates to general care
+    'psychiatric': ['general'], // Mental health with general support
+    'burns': ['trauma', 'general'], // Burns are a type of trauma
+    'poisoning': ['general', 'respiratory'], // Poisoning affects breathing
+    'general': ['cardiac', 'trauma', 'respiratory'] // General covers basics of all
+  };
+  
+  return relatedMap[emergencyType] || [];
 };
 
 export const rateRide = async (req, res) => {

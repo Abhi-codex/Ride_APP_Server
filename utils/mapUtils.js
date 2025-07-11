@@ -71,3 +71,97 @@ export const calculateFare = (distance, ambulanceType = null, hospitalFareFormul
 export const generateOTP = () => {
   return Math.floor(1000 + Math.random() * 9000).toString();
 };
+
+// Helper function to get recommended ambulance types based on emergency
+export const getRecommendedAmbulanceType = (emergencyType, emergencyPriority) => {
+  const emergencyAmbulanceMap = {
+    cardiac: {
+      critical: 'ccs', // Critical Care Support for severe cardiac events
+      high: 'als',     // Advanced Life Support for serious cardiac issues
+      medium: 'als',   // Advanced Life Support for moderate cardiac issues
+      low: 'bls'       // Basic Life Support for minor cardiac issues
+    },
+    trauma: {
+      critical: 'ccs', // Critical Care for severe trauma
+      high: 'als',     // Advanced Life Support for serious trauma
+      medium: 'als',   // Advanced Life Support for moderate trauma
+      low: 'bls'       // Basic Life Support for minor trauma
+    },
+    respiratory: {
+      critical: 'ccs', // Critical Care for severe respiratory distress
+      high: 'als',     // Advanced Life Support for serious breathing problems
+      medium: 'als',   // Advanced Life Support for moderate respiratory issues
+      low: 'bls'       // Basic Life Support for minor breathing problems
+    },
+    neurological: {
+      critical: 'ccs', // Critical Care for stroke, severe neurological events
+      high: 'als',     // Advanced Life Support for serious neurological issues
+      medium: 'als',   // Advanced Life Support for moderate neurological issues
+      low: 'bls'       // Basic Life Support for minor neurological issues
+    },
+    pediatric: {
+      critical: 'ccs', // Critical Care for critically ill children
+      high: 'als',     // Advanced Life Support for sick children
+      medium: 'als',   // Advanced Life Support for moderately ill children
+      low: 'bls'       // Basic Life Support for minor pediatric issues
+    },
+    obstetric: {
+      critical: 'ccs', // Critical Care for high-risk deliveries/complications
+      high: 'als',     // Advanced Life Support for delivery complications
+      medium: 'als',   // Advanced Life Support for labor transport
+      low: 'bls'       // Basic Life Support for routine maternity transport
+    },
+    psychiatric: {
+      critical: 'als', // Advanced Life Support for psychiatric emergencies
+      high: 'als',     // Advanced Life Support for agitated patients
+      medium: 'bls',   // Basic Life Support for stable psychiatric transport
+      low: 'bls'       // Basic Life Support for routine psychiatric transport
+    },
+    burns: {
+      critical: 'ccs', // Critical Care for severe burns
+      high: 'als',     // Advanced Life Support for serious burns
+      medium: 'als',   // Advanced Life Support for moderate burns
+      low: 'bls'       // Basic Life Support for minor burns
+    },
+    poisoning: {
+      critical: 'ccs', // Critical Care for severe poisoning
+      high: 'als',     // Advanced Life Support for serious poisoning
+      medium: 'als',   // Advanced Life Support for moderate poisoning
+      low: 'bls'       // Basic Life Support for minor poisoning
+    },
+    general: {
+      critical: 'als', // Advanced Life Support for unknown critical emergencies
+      high: 'als',     // Advanced Life Support for serious general emergencies
+      medium: 'bls',   // Basic Life Support for moderate general issues
+      low: 'bls'       // Basic Life Support for minor general issues
+    }
+  };
+
+  // Special cases for urban/traffic scenarios
+  const urbanTypes = ['auto', 'bike']; // These can be recommended for quick response in traffic
+
+  if (!emergencyType || !emergencyAmbulanceMap[emergencyType]) {
+    return emergencyPriority === 'critical' ? 'als' : 'bls';
+  }
+
+  const recommendedType = emergencyAmbulanceMap[emergencyType][emergencyPriority] || 'bls';
+  
+  return {
+    primary: recommendedType,
+    alternatives: urbanTypes, // Auto and bike ambulances for quick response
+    description: getAmbulanceTypeDescription(recommendedType)
+  };
+};
+
+// Helper function to get ambulance type descriptions
+export const getAmbulanceTypeDescription = (type) => {
+  const descriptions = {
+    bls: 'Basic Life Support - Standard ambulance with essential medical equipment',
+    als: 'Advanced Life Support - Advanced medical equipment and cardiac monitoring',
+    ccs: 'Critical Care Support - ICU-level equipment for critically ill patients',
+    auto: 'Auto Ambulance - Compact design for urban areas and traffic-congested zones',
+    bike: 'Bike Safety Unit - Rapid response motorcycle for quick assessment and first aid'
+  };
+  
+  return descriptions[type] || 'Medical transport vehicle';
+};
