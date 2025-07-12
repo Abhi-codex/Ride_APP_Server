@@ -3,7 +3,8 @@ import {
   searchHospitals,
   getHospitalDetails,
   createHospital,
-  getHospitals
+  getHospitals,
+  getHospitalPhoto
 } from "../controllers/hospital.js";
 import auth from "../middleware/authentication.js";
 
@@ -14,6 +15,9 @@ router.get("/search", searchHospitals);
 
 // Get hospital details by place ID
 router.get("/details/:placeId", getHospitalDetails);
+
+// Get hospital photo by photo reference
+router.get("/photo/:photoReference", getHospitalPhoto);
 
 // Create hospital in local database (authenticated)
 router.post("/", auth, createHospital);

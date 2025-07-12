@@ -9,8 +9,6 @@ const connectDB = async (url) => {
       maxPoolSize: 10,
       minPoolSize: 5,
       maxIdleTimeMS: 300000,
-      useNewUrlParser: true,
-      useUnifiedTopology: true,
       retryWrites: true,
       w: "majority",
     };

@@ -308,33 +308,86 @@ export const searchHospitals = async (req, res) => {
     console.log('Total unique places found:', allPlaces.size);
 
     // Process and format results with enhanced emergency capability validation
-    const hospitals = Array.from(allPlaces.values()).map(place => {
-      const distance = calculateDistance(
-        parseFloat(lat), 
-        parseFloat(lng),
-        place.geometry.location.lat,
-        place.geometry.location.lng
-      );
+    const hospitals = await Promise.all(
+      Array.from(allPlaces.values()).map(async (place) => {
+        const distance = calculateDistance(
+          parseFloat(lat), 
+          parseFloat(lng),
+          place.geometry.location.lat,
+          place.geometry.location.lng
+        );
 
-      const emergencyCapability = assessEmergencyCapability(place, emergency);
-      
-      return {
-        id: place.place_id,
-        name: place.name,
-        latitude: place.geometry.location.lat,
-        longitude: place.geometry.location.lng,
-        rating: place.rating || null,
-        placeId: place.place_id,
-        address: place.vicinity || place.formatted_address,
-        emergencyServices: inferServicesFromPlace(place, emergency),
-        distance: parseFloat(distance.toFixed(2)),
-        isOpen: place.opening_hours?.open_now ?? null,
-        priceLevel: place.price_level || null,
-        emergencyCapabilityScore: emergencyCapability.score,
-        emergencyFeatures: emergencyCapability.features,
-        isEmergencyVerified: emergencyCapability.isVerified
-      };
-    });
+        const emergencyCapability = assessEmergencyCapability(place, emergency);
+        
+        // Get photos for this place (limit to first photo for search results)
+        let photos = place.photos ? place.photos.slice(0, 1).map(photo => ({
+          photoReference: photo.photo_reference,
+          width: photo.width,
+          height: photo.height
+        })) : [];
+        
+        // If no photos in search results, try to get them from Place Details API
+        // But only for highly-rated or verified emergency hospitals to minimize API calls
+        if (photos.length === 0 && (emergencyCapability.isVerified || place.rating >= 4.0)) {
+          try {
+            console.log(`Fetching details for ${place.name} to get photos...`);
+            const detailsResponse = await fetch(
+              `https://maps.googleapis.com/maps/api/place/details/json?` +
+              `place_id=${place.place_id}&fields=photos&` +
+              `key=${process.env.GOOGLE_PLACES_API_KEY}`,
+              {
+                method: 'GET',
+                headers: {
+                  'User-Agent': 'Ambulance-Booking-System/1.0'
+                },
+                agent: httpsAgent
+              }
+            );
+            
+            if (detailsResponse.ok) {
+              const detailsData = await detailsResponse.json();
+              if (detailsData.status === 'OK' && detailsData.result && detailsData.result.photos) {
+                photos = detailsData.result.photos.slice(0, 1).map(photo => ({
+                  photoReference: photo.photo_reference,
+                  width: photo.width,
+                  height: photo.height
+                }));
+                console.log(`  - Found ${photos.length} photos in details API`);
+              }
+            }
+          } catch (error) {
+            console.error(`Failed to fetch details for ${place.name}:`, error.message);
+          }
+        }
+        
+        // Debug logging for photos
+        console.log(`Hospital: ${place.name}`);
+        console.log(`  - Has photos in API response: ${!!place.photos}`);
+        console.log(`  - Number of photos: ${place.photos ? place.photos.length : 0}`);
+        console.log(`  - Final photos array length: ${photos.length}`);
+        if (photos.length > 0) {
+          console.log(`  - First photo reference: ${photos[0].photoReference}`);
+        }
+        
+        return {
+          id: place.place_id,
+          name: place.name,
+          latitude: place.geometry.location.lat,
+          longitude: place.geometry.location.lng,
+          rating: place.rating || null,
+          placeId: place.place_id,
+          address: place.vicinity || place.formatted_address,
+          emergencyServices: inferServicesFromPlace(place, emergency),
+          distance: parseFloat(distance.toFixed(2)),
+          isOpen: place.opening_hours?.open_now ?? null,
+          priceLevel: place.price_level || null,
+          photos: photos,
+          emergencyCapabilityScore: emergencyCapability.score,
+          emergencyFeatures: emergencyCapability.features,
+          isEmergencyVerified: emergencyCapability.isVerified
+        };
+      })
+    );
     
     console.log('Places that passed emergency capability check:', hospitals.length);
     
@@ -395,6 +448,14 @@ export const searchHospitals = async (req, res) => {
     });
 
     console.log(`Hospitals after filtering: ${verifiedHospitals.length}`);
+
+    // Log a sample of the response structure for debugging
+    if (verifiedHospitals.length > 0) {
+      console.log('=== SAMPLE HOSPITAL RESPONSE FOR FRONTEND DEBUG ===');
+      console.log('First hospital structure:', JSON.stringify(verifiedHospitals[0], null, 2));
+      console.log('Photos in first hospital:', verifiedHospitals[0].photos);
+      console.log('==========================================');
+    }
 
     // If we still have no hospitals, return the top 5 closest ones regardless of score
     if (verifiedHospitals.length === 0 && hospitals.length > 0) {
@@ -458,10 +519,10 @@ export const getHospitalDetails = async (req, res) => {
   try {
     console.log('Fetching hospital details for place ID:', placeId);
     
-    // Get detailed information from Google Places API
+    // Get detailed information from Google Places API including photos
     const response = await fetch(
       `https://maps.googleapis.com/maps/api/place/details/json?` +
-      `place_id=${placeId}&fields=name,formatted_address,geometry,rating,formatted_phone_number,opening_hours,website&` +
+      `place_id=${placeId}&fields=name,formatted_address,geometry,rating,formatted_phone_number,opening_hours,website,photos&` +
       `key=${process.env.GOOGLE_PLACES_API_KEY}`,
       {
         method: 'GET',
@@ -487,6 +548,14 @@ export const getHospitalDetails = async (req, res) => {
     // Assess emergency capability for this specific hospital
     const emergencyCapability = assessEmergencyCapability(place);
     
+    // Process photos if available
+    const photos = place.photos ? place.photos.slice(0, 5).map(photo => ({
+      photoReference: photo.photo_reference,
+      width: photo.width,
+      height: photo.height,
+      attributions: photo.html_attributions || []
+    })) : [];
+    
     const hospitalDetails = {
       placeId: placeId,
       name: place.name,
@@ -498,6 +567,7 @@ export const getHospitalDetails = async (req, res) => {
       website: place.website || null,
       openingHours: place.opening_hours?.weekday_text || null,
       isOpen: place.opening_hours?.open_now ?? null,
+      photos: photos,
       emergencyCapabilityScore: emergencyCapability.score,
       emergencyFeatures: emergencyCapability.features,
       isEmergencyVerified: emergencyCapability.isVerified,
@@ -627,5 +697,96 @@ export const getHospitals = async (req, res) => {
   } catch (error) {
     console.error("Error retrieving hospitals:", error);
     throw new BadRequestError("Failed to retrieve hospitals");
+  }
+};
+
+// Get hospital photo by photo reference
+export const getHospitalPhoto = async (req, res) => {
+  const { photoReference } = req.params;
+  const { maxwidth = 400, maxheight = 400 } = req.query;
+  
+  if (!photoReference) {
+    throw new BadRequestError("Photo reference is required");
+  }
+  
+  if (!process.env.GOOGLE_PLACES_API_KEY) {
+    throw new BadRequestError("Google Places API not configured");
+  }
+  
+  try {
+    console.log('Fetching hospital photo for reference:', photoReference);
+    
+    // Get photo from Google Places API
+    const photoUrl = `https://maps.googleapis.com/maps/api/place/photo?` +
+      `maxwidth=${maxwidth}&maxheight=${maxheight}&photoreference=${photoReference}&` +
+      `key=${process.env.GOOGLE_PLACES_API_KEY}`;
+    
+    const response = await fetch(photoUrl, {
+      method: 'GET',
+      headers: {
+        'User-Agent': 'Ambulance-Booking-System/1.0'
+      },
+      agent: httpsAgent
+    });
+    
+    if (!response.ok) {
+      throw new Error(`Failed to fetch photo: ${response.status}`);
+    }
+    
+    // Get the content type from the response
+    const contentType = response.headers.get('content-type') || 'image/jpeg';
+    
+    // Set appropriate headers for image response
+    res.set({
+      'Content-Type': contentType,
+      'Cache-Control': 'public, max-age=86400', // Cache for 24 hours
+      'Access-Control-Allow-Origin': '*'
+    });
+    
+    // Get the image buffer and send it
+    const imageBuffer = await response.arrayBuffer();
+    res.send(Buffer.from(imageBuffer));
+    
+  } catch (error) {
+    console.error("Error fetching hospital photo:", error);
+    throw new BadRequestError("Failed to fetch hospital photo: " + error.message);
+  }
+};
+
+// Enhanced function to get place details including photos for search results
+const getPlacePhotos = async (placeId) => {
+  try {
+    const response = await fetch(
+      `https://maps.googleapis.com/maps/api/place/details/json?` +
+      `place_id=${placeId}&fields=photos&` +
+      `key=${process.env.GOOGLE_PLACES_API_KEY}`,
+      {
+        method: 'GET',
+        headers: {
+          'User-Agent': 'Ambulance-Booking-System/1.0'
+        },
+        agent: httpsAgent
+      }
+    );
+    
+    if (!response.ok) {
+      console.error(`Failed to fetch photos for place ${placeId}`);
+      return [];
+    }
+    
+    const data = await response.json();
+    
+    if (data.status === 'OK' && data.result && data.result.photos) {
+      return data.result.photos.slice(0, 3).map(photo => ({
+        photoReference: photo.photo_reference,
+        width: photo.width,
+        height: photo.height
+      }));
+    }
+    
+    return [];
+  } catch (error) {
+    console.error(`Error fetching photos for place ${placeId}:`, error);
+    return [];
   }
 };

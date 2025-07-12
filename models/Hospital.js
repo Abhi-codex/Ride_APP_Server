@@ -82,9 +82,6 @@ const hospitalSchema = new Schema(
 // Index for location-based queries
 hospitalSchema.index({ "location.latitude": 1, "location.longitude": 1 });
 
-// Index for place ID lookups
-hospitalSchema.index({ placeId: 1 });
-
 // Index for emergency services
 hospitalSchema.index({ emergencyServices: 1 });
 

@@ -1624,6 +1624,13 @@ Search for hospitals near a location using Google Places API with emergency-spec
       "distance": 2.5,
       "isOpen": true,
       "priceLevel": null,
+      "photos": [
+        {
+          "photoReference": "ATplDJa7_cHlQ1pXXGxKnKG8FN2zn...",
+          "width": 4032,
+          "height": 3024
+        }
+      ],
       "emergencyCapabilityScore": 85,
       "emergencyFeatures": [
         "Emergency facility",
@@ -1675,6 +1682,20 @@ Get detailed information about a specific hospital using Google Places API.
       "Sunday: Open 24 hours"
     ],
     "isOpen": true,
+    "photos": [
+      {
+        "photoReference": "ATplDJa7_cHlQ1pXXGxKnKG8FN2zn...",
+        "width": 4032,
+        "height": 3024,
+        "attributions": ["Google User"]
+      },
+      {
+        "photoReference": "ATplDJY9rKxNV2nQ8pEbF1G7mN...",
+        "width": 3024,
+        "height": 4032,
+        "attributions": ["Hospital Official"]
+      }
+    ],
     "emergencyCapabilityScore": 75,
     "emergencyFeatures": [
       "Emergency facility",
@@ -1689,7 +1710,90 @@ Get detailed information about a specific hospital using Google Places API.
 }
 ```
 
-### 3. Get Local Hospitals Database
+### 3. Get Hospital Photo
+**GET** `/hospitals/photo/:photoReference`
+
+Retrieve actual hospital photo images using Google Places API photo references.
+
+**Parameters:**
+- `photoReference`: Photo reference string obtained from hospital details or search results
+
+**Query Parameters:**
+- `maxwidth` (optional): Maximum width of photo (default: 400, max: 1600)
+- `maxheight` (optional): Maximum height of photo (default: 400, max: 1600)
+
+**Example:** `/hospitals/photo/ATplDJa7_cHlQ1pXXGxKnKG8FN2zn?maxwidth=600&maxheight=400`
+
+**Response:**
+- Content-Type: `image/jpeg` (or appropriate image format)
+- Cache-Control: `public, max-age=86400` (24-hour cache)
+- Returns binary image data
+
+**Frontend Usage Examples:**
+
+**React.js Example:**
+```jsx
+import React, { useState, useEffect } from 'react';
+
+const HospitalImage = ({ photoReference, maxwidth = 400, maxheight = 300 }) => {
+  const [imageUrl, setImageUrl] = useState('/placeholder.jpg');
+
+  useEffect(() => {
+    if (photoReference) {
+      const url = `${process.env.REACT_APP_API_URL}/hospitals/photo/${photoReference}?maxwidth=${maxwidth}&maxheight=${maxheight}`;
+      setImageUrl(url);
+    }
+  }, [photoReference, maxwidth, maxheight]);
+
+  return (
+    <img 
+      src={imageUrl} 
+      alt="Hospital"
+      style={{ width: '100%', height: '200px', objectFit: 'cover' }}
+      onError={(e) => {
+        e.target.src = '/placeholder.jpg'; // Fallback image
+      }}
+    />
+  );
+};
+```
+
+**HTML/JavaScript Example:**
+```html
+<div class="hospital-card">
+  <img id="hospital-image" src="/placeholder.jpg" alt="Hospital" />
+  <h3 id="hospital-name"></h3>
+</div>
+
+<script>
+function displayHospitalPhoto(hospital) {
+  const img = document.getElementById('hospital-image');
+  const name = document.getElementById('hospital-name');
+  
+  if (hospital.photos && hospital.photos.length > 0) {
+    const photoReference = hospital.photos[0].photoReference;
+    img.src = `http://localhost:3000/hospitals/photo/${photoReference}?maxwidth=400&maxheight=300`;
+  }
+  
+  name.textContent = hospital.name;
+  
+  // Handle image load errors
+  img.onerror = function() {
+    this.src = '/placeholder.jpg';
+  };
+}
+</script>
+```
+
+**Photo Features:**
+- **Automatic Caching**: Photos are cached for 24 hours to improve performance
+- **Multiple Photos**: Hospital details include up to 5 photos, search results include 1
+- **Size Control**: Customizable dimensions via query parameters
+- **Error Handling**: Graceful fallback when photos aren't available
+- **CORS Support**: Can be accessed from frontend applications
+- **Attribution**: Photo attributions included in hospital details response
+
+### 4. Get Local Hospitals Database
 **GET** `/hospitals`
 
 Retrieve hospitals from the local database with optional filtering.
@@ -1724,7 +1828,7 @@ Retrieve hospitals from the local database with optional filtering.
 }
 ```
 
-### 4. Create Hospital (Authenticated)
+### 5. Create Hospital (Authenticated)
 **POST** `/hospitals`
 
 Add a new hospital to the local database. (Requires authentication)
