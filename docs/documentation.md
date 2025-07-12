@@ -113,6 +113,29 @@ The system now intelligently matches drivers to emergency calls:
 - **Smart Sorting**: Rides sorted by compatibility score, then by creation time
 - **Cross-Specialty Support**: Related specializations provide partial matching
 
+### Enhanced Hospital Search 🏥
+The hospital search system now ensures only emergency-capable hospitals are returned:
+
+#### Emergency Capability Validation
+- **Multi-Query Search**: Combines searches for "emergency", "trauma center", and "emergency room"
+- **Emergency Keywords Filtering**: Identifies hospitals with emergency capabilities
+- **Capability Scoring**: Assigns scores based on emergency indicators and features
+- **Verification System**: Filters out clinics, urgent care, and non-emergency facilities
+
+#### Capability Scoring Factors
+- **Hospital Type (20 points)**: Verified hospital facility
+- **Emergency Keywords (25-40 points)**: "Emergency", "Trauma", "Level I/II/III", etc.
+- **Specialty Services (15 points)**: Relevant to specific emergency types
+- **Patient Rating Bonus (5-10 points)**: High-rated hospitals get priority
+- **24/7 Operations (10 points)**: Currently open or 24-hour facilities
+
+#### Search Enhancement Features
+- **Emergency-Specific Keywords**: Searches tailored to emergency type (cardiac, trauma, etc.)
+- **Exclusion Filters**: Removes dental clinics, veterinary, nursing homes, etc.
+- **Smart Sorting**: Emergency verification → Capability score → Service relevance → Distance
+- **Minimum Threshold**: Only hospitals with emergency capability score ≥ 30 are returned
+- **Comprehensive Results**: Each hospital includes emergency features and verification status
+
 ## 🔐 Authentication System
 
 ### Authentication Endpoints
@@ -243,7 +266,8 @@ Updates user profile with detailed information. (Requires authentication)
       "plateNumber": "AMB123",
       "model": "Mercedes Sprinter",
       "licenseNumber": "EMT-123456",
-      "certificationLevel": "EMT-Paramedic"
+      "certificationLevel": "EMT-Paramedic",
+      "specializations": ["cardiac", "trauma", "general"]
     },
     "hospitalAffiliation": {
       "isAffiliated": true,
@@ -284,7 +308,8 @@ Retrieves current user's profile information. (Requires authentication)
       "plateNumber": "AMB123",
       "model": "Mercedes Sprinter",
       "licenseNumber": "EMT-123456",
-      "certificationLevel": "EMT-Paramedic"
+      "certificationLevel": "EMT-Paramedic",
+      "specializations": ["cardiac", "trauma", "general"]
     },
     "hospitalAffiliation": {
       "isAffiliated": true,
@@ -392,6 +417,11 @@ The frontend now includes a comprehensive emergency classification system that h
       "latitude": 40.7589,
       "longitude": -73.9851
     },
+    "emergency": {
+      "type": "cardiac",
+      "priority": "critical",
+      "specialInstructions": "Patient experiencing chest pain"
+    },
     "customer": "60f7b3b3b3b3b3b3b3b3b3b4",
     "rider": null,
     "status": "SEARCHING_FOR_RIDER",
@@ -483,7 +513,7 @@ Retrieves emergency calls for the authenticated user (both as patient and driver
   "rides": [
     {
       "_id": "60f7b3b3b3b3b3b3b3b3b3b3",
-      "vehicle": "advancedAmbulance",
+      "vehicle": "als",
       "distance": 15.5,
       "fare": 390,
       "status": "COMPLETED",
@@ -653,11 +683,12 @@ Returns the ambulance driver's profile information.
     "role": "driver",
     "isOnline": true,
     "vehicle": {
-      "type": "advancedAmbulance",
+      "type": "als",
       "plateNumber": "AMB123",
       "model": "Mercedes Sprinter",
       "licenseNumber": "EMT-123456",
-      "certificationLevel": "EMT-Paramedic"
+      "certificationLevel": "EMT-Paramedic",
+      "specializations": ["cardiac", "trauma", "general"]
     },
     "createdAt": "2021-07-21T10:30:00.000Z"
   }
@@ -695,11 +726,12 @@ Updates ambulance and certification details.
 **Request Body:**
 ```json
 {
-  "type": "icuAmbulance",
+  "type": "ccs",
   "plateNumber": "AMB456",
-  "model": "Ford Transit ICU",
+  "model": "Ford Transit CCS",
   "licenseNumber": "EMT-789012",
-  "certificationLevel": "Critical Care"
+  "certificationLevel": "Critical Care",
+  "specializations": ["cardiac", "trauma", "general"]
 }
 ```
 
@@ -716,11 +748,12 @@ Updates ambulance and certification details.
   "message": "Ambulance information updated successfully",
   "data": {
     "vehicle": {
-      "type": "icuAmbulance",
+      "type": "ccs",
       "plateNumber": "AMB456",
-      "model": "Ford Transit ICU",
+      "model": "Ford Transit CCS",
       "licenseNumber": "EMT-789012",
-      "certificationLevel": "Critical Care"
+      "certificationLevel": "Critical Care",
+      "specializations": ["cardiac", "trauma", "general"]
     }
   }
 }
@@ -745,7 +778,7 @@ Returns paginated emergency call history for the driver.
     "rides": [
       {
         "_id": "60f7b3b3b3b3b3b3b3b3b3b3",
-        "vehicle": "advancedAmbulance",
+        "vehicle": "als",
         "distance": 15.5,
         "fare": 390,
         "pickup": {
@@ -757,6 +790,11 @@ Returns paginated emergency call history for the driver.
           "address": "City General Hospital",
           "latitude": 40.7589,
           "longitude": -73.9851
+        },
+        "emergency": {
+          "type": "cardiac",
+          "priority": "critical",
+          "specialInstructions": "Patient experiencing chest pain"
         },
         "customer": {
           "_id": "60f7b3b3b3b3b3b3b3b3b3b4",
@@ -934,6 +972,18 @@ All endpoints return consistent error responses:
     certificationLevel: String, // EMT certification
     specializations: [String] // Array of emergency specializations (e.g., ["cardiac", "trauma", "pediatric"])
   },
+  hospitalAffiliation: { // Hospital affiliation for drivers
+    isAffiliated: Boolean,
+    hospitalName: String,
+    hospitalId: String,
+    hospitalAddress: String,
+    employeeId: String,
+    customFareFormula: {
+      baseFare: Number,
+      perKmRate: Number,
+      minimumFare: Number
+    }
+  },
   createdAt: Date,
   updatedAt: Date
 }
@@ -981,11 +1031,10 @@ All endpoints return consistent error responses:
   status: String, // Call status
   otp: String, // 4-digit verification code
   rating: Number, // 1-5 rating (optional)
-  emergency: { // NEW emergency context
-    type: String, // Emergency type ID (e.g., "heart_attack")
-    name: String, // Human-readable name (e.g., "Heart Attack")
+  emergency: { // Emergency context information
+    type: String, // Emergency type (e.g., "cardiac", "trauma", "respiratory")
     priority: String, // "low", "medium", "high", "critical"
-    category: String // Emergency category (e.g., "cardiac")
+    specialInstructions: String // Optional special medical instructions
   },
   createdAt: Date,
   updatedAt: Date
@@ -1008,10 +1057,11 @@ SEARCHING_FOR_RIDER → START → ARRIVED → COMPLETED
 // Minimum fare applies if calculated fare is lower
 
 const fareStructure = {
-  basicAmbulance: { base: ₹50, perKm: ₹15, minimum: ₹100 },
-  advancedAmbulance: { base: ₹80, perKm: ₹20, minimum: ₹150 },
-  icuAmbulance: { base: ₹120, perKm: ₹30, minimum: ₹200 },
-  airAmbulance: { base: ₹500, perKm: ₹100, minimum: ₹800 }
+  bls: { base: ₹50, perKm: ₹15, minimum: ₹100 },
+  als: { base: ₹80, perKm: ₹20, minimum: ₹150 },
+  ccs: { base: ₹120, perKm: ₹30, minimum: ₹200 },
+  auto: { base: ₹40, perKm: ₹12, minimum: ₹80 },
+  bike: { base: ₹30, perKm: ₹10, minimum: ₹60 }
 };
 ```
 
@@ -1056,6 +1106,9 @@ REFRESH_TOKEN_SECRET=your_refresh_token_secret
 ACCESS_TOKEN_EXPIRY=15m
 REFRESH_TOKEN_EXPIRY=7d
 
+# Google Places API (for hospital search)
+GOOGLE_PLACES_API_KEY=your_google_places_api_key
+
 # Server
 PORT=3000
 NODE_ENV=development
@@ -1064,10 +1117,11 @@ NODE_ENV=development
 ### Server Startup Information
 When the server starts, you'll see:
 ```
-🚑 Ambulance Service Server running on http://localhost:3000
+🚑 Service Server running on http://localhost:3000
 🌐 Network access: http://192.168.31.49:3000
 📍 Health check: http://192.168.31.49:3000/health
 🔐 Auth endpoint: http://192.168.31.49:3000/auth/signin
+🏥 Hospital search: http://192.168.31.49:3000/hospitals/*
 🚨 Emergency calls: http://192.168.31.49:3000/ride/*
 👨‍⚕️ Driver endpoints: http://192.168.31.49:3000/driver/*
 ✅ Database connected successfully
@@ -1090,7 +1144,7 @@ curl -X POST http://localhost:3000/ride/create \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer YOUR_TOKEN" \
   -d '{
-    "vehicle": "advancedAmbulance",
+    "vehicle": "als",
     "pickup": {
       "address": "123 Emergency St",
       "latitude": 40.7128,
@@ -1100,6 +1154,11 @@ curl -X POST http://localhost:3000/ride/create \
       "address": "General Hospital",
       "latitude": 40.7589,
       "longitude": -73.9851
+    },
+    "emergency": {
+      "type": "cardiac",
+      "priority": "critical",
+      "specialInstructions": "Patient experiencing chest pain"
     }
   }'
 ```
@@ -1186,10 +1245,11 @@ socket.on('emergencyCall', (call) => {
 
 ---
 
-**System Version**: 2.0 (Ambulance Emergency Services)  
-**Last Updated**: January 2024  
+**System Version**: 3.0 (Emergency Ambulance Services with Smart Matching & Hospital Integration)  
+**Last Updated**: July 2025  
 **API Compatibility**: RESTful with Socket.IO real-time features  
 **Database**: MongoDB with Mongoose ODM
+**External APIs**: Google Places API for hospital discovery
 
 ## 📱 Frontend Form Integration
 
@@ -1263,10 +1323,11 @@ const completePatientProfile = async (formData) => {
   <!-- Ambulance Information -->
   <select name="vehicleType" required>
     <option value="">Select Ambulance Type</option>
-    <option value="basicAmbulance">Basic Ambulance</option>
-    <option value="advancedAmbulance">Advanced Life Support</option>
-    <option value="icuAmbulance">ICU Ambulance</option>
-    <option value="airAmbulance">Air Ambulance</option>
+    <option value="bls">Basic Life Support (BLS)</option>
+    <option value="als">Advanced Life Support (ALS)</option>
+    <option value="ccs">Critical Care Support (CCS)</option>
+    <option value="auto">Auto Ambulance</option>
+    <option value="bike">Bike Safety Unit</option>
   </select>
   
   <input type="text" name="plateNumber" placeholder="License Plate Number" required>
@@ -1432,11 +1493,12 @@ app.register('+1234567890', 'driver')
       name: 'Dr. John EMT',
       email: 'john@hospital.com',
       vehicle: {
-        type: 'advancedAmbulance',
+        type: 'als',
         plateNumber: 'AMB123',
         model: 'Mercedes Sprinter',
         licenseNumber: 'EMT-123456',
-        certificationLevel: 'EMT-Paramedic'
+        certificationLevel: 'EMT-Paramedic',
+        specializations: ['cardiac', 'trauma', 'general']
       }
     });
   })
@@ -1546,25 +1608,39 @@ Search for hospitals near a location using Google Places API with emergency-spec
 **Response:**
 ```json
 {
-  "message": "Hospitals retrieved successfully",
-  "count": 5,
+  "message": "Emergency-capable hospitals retrieved successfully",
+  "count": 3,
+  "totalFound": 5,
   "hospitals": [
     {
       "id": "ChIJN1t_tDeuEmsRUsoyG83frY4",
-      "name": "City General Hospital",
+      "name": "City General Hospital - Emergency Center",
       "latitude": 40.7589,
       "longitude": -73.9851,
       "rating": 4.2,
       "placeId": "ChIJN1t_tDeuEmsRUsoyG83frY4",
       "address": "123 Hospital Ave, New York, NY",
-      "emergencyServices": ["emergency_room", "cardiology", "intensive_care"],
+      "emergencyServices": ["emergency_room", "cardiology", "intensive_care", "trauma_center"],
       "distance": 2.5,
       "isOpen": true,
-      "priceLevel": null
+      "priceLevel": null,
+      "emergencyCapabilityScore": 85,
+      "emergencyFeatures": [
+        "Emergency facility",
+        "Trauma center", 
+        "High patient rating (4.0+)",
+        "cardiac specialization"
+      ],
+      "isEmergencyVerified": true
     }
   ],
   "emergency": "cardiac",
-  "searchRadius": 15000
+  "searchRadius": 15000,
+  "searchCriteria": {
+    "minimumEmergencyScore": 30,
+    "emergencyVerifiedOnly": false,
+    "emergencyType": "cardiac"
+  }
 }
 ```
 
@@ -1598,7 +1674,17 @@ Get detailed information about a specific hospital using Google Places API.
       "Saturday: Open 24 hours",
       "Sunday: Open 24 hours"
     ],
-    "isOpen": true
+    "isOpen": true,
+    "emergencyCapabilityScore": 75,
+    "emergencyFeatures": [
+      "Emergency facility",
+      "Medical center",
+      "High patient rating (4.0+)",
+      "Currently open/24-7 operations"
+    ],
+    "isEmergencyVerified": true,
+    "emergencyServices": ["emergency_room", "cardiology", "intensive_care"],
+    "recommendation": "Verified emergency-capable hospital"
   }
 }
 ```
