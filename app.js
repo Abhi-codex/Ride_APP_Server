@@ -94,12 +94,12 @@ const start = async () => {
   const PORT = process.env.PORT || 3000;
   const server_instance = server.listen(PORT, "0.0.0.0", () => {
     console.log(`🚀 Service Server running on http://localhost:${PORT}`);
-    console.log(`🌐 Network access: http://192.168.31.49:${PORT}`);
-    console.log(`📍 Health check: http://192.168.31.49:${PORT}/health`);
-    console.log(`🔐 Auth endpoint: http://192.168.31.49:${PORT}/auth/signin`);
-    console.log(`🏥 Hospital search: http://192.168.31.49:${PORT}/hospitals/*`);
-    console.log(`🚨 Emergency calls: http://192.168.31.49:${PORT}/ride/*`);
-    console.log(`👨‍⚕️ Driver endpoints: http://192.168.31.49:${PORT}/driver/*`);
+    console.log(`🌐 Network access: http://192.168.34.247:${PORT}`);
+    console.log(`📍 Health check: http://192.168.34.247:${PORT}/health`);
+    console.log(`🔐 Auth endpoint: http://192.168.34.247:${PORT}/auth/signin`);
+    console.log(`🏥 Hospital search: http://192.168.34.247:${PORT}/hospitals/*`);
+    console.log(`🚨 Emergency calls: http://192.168.34.247:${PORT}/ride/*`);
+    console.log(`👨‍⚕️ Driver endpoints: http://192.168.34.247:${PORT}/driver/*`);
   });
 
   try {
