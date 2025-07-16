@@ -1,9 +1,10 @@
 import geolib from "geolib";
 import jwt from "jsonwebtoken";
+import process from "process";
 import User from "../models/User.js";
 import Ride from "../models/Ride.js";
 
-const onDutyRiders = new Map();
+const onDutyDrivers = new Map();
 
 const handleSocketConnection = (io) => {
   io.use(async (socket, next) => {
@@ -27,44 +28,44 @@ const handleSocketConnection = (io) => {
     const user = socket.user;
     console.log(`User Joined: ${user.id} (${user.role})`);
 
-    if (user.role === "rider") {
+    if (user.role === "driver") {
       socket.on("goOnDuty", (coords) => {
-        onDutyRiders.set(user.id, { socketId: socket.id, coords });
+        onDutyDrivers.set(user.id, { socketId: socket.id, coords });
         socket.join("onDuty");
-        console.log(`rider ${user.id} is now on duty.`);
-        updateNearbyriders();
+        console.log(`Driver ${user.id} is now on duty.`);
+        updateNearbyDrivers();
       });
 
       socket.on("goOffDuty", () => {
-        onDutyRiders.delete(user.id);
+        onDutyDrivers.delete(user.id);
         socket.leave("onDuty");
-        console.log(`rider ${user.id} is now off duty.`);
-        updateNearbyriders();
+        console.log(`Driver ${user.id} is now off duty.`);
+        updateNearbyDrivers();
       });
 
       socket.on("updateLocation", (coords) => {
-        if (onDutyRiders.has(user.id)) {
-          onDutyRiders.get(user.id).coords = coords;
-          console.log(`rider ${user.id} updated location.`);
-          updateNearbyriders();
-          socket.to(`rider_${user.id}`).emit("riderLocationUpdate", {
-            riderId: user.id,
+        if (onDutyDrivers.has(user.id)) {
+          onDutyDrivers.get(user.id).coords = coords;
+          console.log(`Driver ${user.id} updated location.`);
+          updateNearbyDrivers();
+          socket.to(`driver_${user.id}`).emit("driverLocationUpdate", {
+            driverId: user.id,
             coords,
           });
         }
       });
     }
 
-    if (user.role === "customer") {
-      socket.on("subscribeToZone", (customerCoords) => {
-        socket.user.coords = customerCoords;
-        sendNearbyRiders(socket, customerCoords);
+    if (user.role === "patient") {
+      socket.on("subscribeToZone", (patientCoords) => {
+        socket.user.coords = patientCoords;
+        sendNearbyDrivers(socket, patientCoords);
       });
 
-      socket.on("searchrider", async (rideId) => {
+      socket.on("searchDriver", async (rideId) => {
         try {
           const ride = await Ride.findById(rideId).populate("customer rider");
-          if (!ride) return socket.emit("error", { message: "Ride not found" });
+          if (!ride) return socket.emit("error", { message: "Emergency call not found" });
 
           const { latitude: pickupLat, longitude: pickupLon } = ride.pickup;
 
@@ -77,12 +78,12 @@ const handleSocketConnection = (io) => {
             if (canceled) return;
             retries++;
 
-            const riders = sendNearbyRiders(socket, { latitude: pickupLat, longitude: pickupLon }, ride);
-            if (riders.length > 0 || retries >= MAX_RETRIES) {
+            const drivers = sendNearbyDrivers(socket, { latitude: pickupLat, longitude: pickupLon }, ride);
+            if (drivers.length > 0 || retries >= MAX_RETRIES) {
               clearInterval(retryInterval);
               if (!rideAccepted && retries >= MAX_RETRIES) {
                 await Ride.findByIdAndDelete(rideId);
-                socket.emit("error", { message: "No riders found within 5 minutes." });
+                socket.emit("error", { message: "No ambulance drivers found within 5 minutes." });
               }
             }
           };
@@ -98,27 +99,27 @@ const handleSocketConnection = (io) => {
             canceled = true;
             clearInterval(retryInterval);
             await Ride.findByIdAndDelete(rideId);
-            socket.emit("rideCanceled", { message: "Ride canceled" });
+            socket.emit("rideCanceled", { message: "Emergency call canceled" });
 
             if (ride.rider) {
-              const riderSocket = getRiderSocket(ride.rider._id);
-              riderSocket?.emit("rideCanceled", { message: `Customer ${user.id} canceled the ride.` });
+              const driverSocket = getDriverSocket(ride.rider._id);
+              driverSocket?.emit("rideCanceled", { message: `Patient ${user.id} canceled the emergency call.` });
             }
-            console.log(`Customer ${user.id} canceled ride ${rideId}`);
+            console.log(`Patient ${user.id} canceled emergency call ${rideId}`);
           });
         } catch (error) {
-          console.error("Error searching for rider:", error);
-          socket.emit("error", { message: "Error searching for rider" });
+          console.error("Error searching for ambulance driver:", error);
+          socket.emit("error", { message: "Error searching for ambulance driver" });
         }
       });
     }
 
-    socket.on("subscribeToriderLocation", (riderId) => {
-      const rider = onDutyRiders.get(riderId);
-      if (rider) {
-        socket.join(`rider_${riderId}`);
-        socket.emit("riderLocationUpdate", { riderId, coords: rider.coords });
-        console.log(`User ${user.id} subscribed to rider ${riderId}'s location.`);
+    socket.on("subscribeToDriverLocation", (driverId) => {
+      const driver = onDutyDrivers.get(driverId);
+      if (driver) {
+        socket.join(`driver_${driverId}`);
+        socket.emit("driverLocationUpdate", { driverId, coords: driver.coords });
+        console.log(`User ${user.id} subscribed to driver ${driverId}'s location.`);
       }
     });
 
@@ -128,47 +129,48 @@ const handleSocketConnection = (io) => {
         const rideData = await Ride.findById(rideId).populate("customer rider");
         socket.emit("rideData", rideData);
       } catch (error) {
-        socket.emit("error", { message: "Failed to receive ride data" });
+        console.error("Failed to receive emergency call data:", error);
+        socket.emit("error", { message: "Failed to receive emergency call data" });
       }
     });
 
     socket.on("disconnect", () => {
-      if (user.role === "rider") onDutyRiders.delete(user.id);
+      if (user.role === "driver") onDutyDrivers.delete(user.id);
       console.log(`${user.role} ${user.id} disconnected.`);
     });
 
-    function updateNearbyriders() {
+    function updateNearbyDrivers() {
       io.sockets.sockets.forEach((socket) => {
-        if (socket.user?.role === "customer") {
-          const customerCoords = socket.user.coords;
-          if (customerCoords) sendNearbyRiders(socket, customerCoords);
+        if (socket.user?.role === "patient") {
+          const patientCoords = socket.user.coords;
+          if (patientCoords) sendNearbyDrivers(socket, patientCoords);
         }
       });
     }
 
-    function sendNearbyRiders(socket, location, ride = null) {
-      const nearbyriders = Array.from(onDutyRiders.values())
-        .map((rider) => ({
-          ...rider,
-          distance: geolib.getDistance(rider.coords, location),
+    function sendNearbyDrivers(socket, location, ride = null) {
+      const nearbyDrivers = Array.from(onDutyDrivers.values())
+        .map((driver) => ({
+          ...driver,
+          distance: geolib.getDistance(driver.coords, location),
         }))
-        .filter((rider) => rider.distance <= 60000)
+        .filter((driver) => driver.distance <= 60000)
         .sort((a, b) => a.distance - b.distance);
 
-      socket.emit("nearbyriders", nearbyriders);
+      socket.emit("nearbyDrivers", nearbyDrivers);
 
       if (ride) {
-        nearbyriders.forEach((rider) => {
-          io.to(rider.socketId).emit("rideOffer", ride);
+        nearbyDrivers.forEach((driver) => {
+          io.to(driver.socketId).emit("emergencyCall", ride);
         });
       }
 
-      return nearbyriders;
+      return nearbyDrivers;
     }
 
-    function getRiderSocket(riderId) {
-      const rider = onDutyRiders.get(riderId);
-      return rider ? io.sockets.sockets.get(rider.socketId) : null;
+    function getDriverSocket(driverId) {
+      const driver = onDutyDrivers.get(driverId);
+      return driver ? io.sockets.sockets.get(driver.socketId) : null;
     }
   });
 };
