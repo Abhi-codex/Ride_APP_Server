@@ -1,4 +1,5 @@
 import jwt from "jsonwebtoken";
+import process from "process";
 import User from "../models/User.js";
 import NotFoundError from "../errors/not-found.js";
 import UnauthenticatedError from "../errors/unauthenticated.js";
@@ -22,6 +23,7 @@ const auth = async (req, res, next) => {
 
     next();
   } catch (error) {
+    console.error("Authentication error:", error);
     throw new UnauthenticatedError("Authentication invalid");
   }
 };

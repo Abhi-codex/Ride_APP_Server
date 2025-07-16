@@ -1,12 +1,6 @@
 import express from 'express';
 import auth from '../middleware/authentication.js';
-import {
-  getDriverStats,
-  getDriverProfile,
-  updateOnlineStatus,
-  updateVehicleInfo,
-  getRideHistory
-} from '../controllers/driver.js';
+import { getDriverStats, getDriverProfile, updateOnlineStatus, updateVehicleInfo, getRideHistory } from '../controllers/driver.js';
 
 const router = express.Router();
 

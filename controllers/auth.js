@@ -2,6 +2,7 @@ import User from "../models/User.js";
 import { StatusCodes } from "http-status-codes";
 import { BadRequestError, UnauthenticatedError } from "../errors/index.js";
 import jwt from "jsonwebtoken";
+import process from "process";
 
 export const auth = async (req, res) => {
   const { phone, role } = req.body;

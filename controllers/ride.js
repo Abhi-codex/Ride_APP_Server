@@ -2,11 +2,7 @@ import Ride from "../models/Ride.js";
 import User from "../models/User.js";
 import { BadRequestError, NotFoundError } from "../errors/index.js";
 import { StatusCodes } from "http-status-codes";
-import {
-  calculateDistance,
-  calculateFare,
-  generateOTP,
-} from "../utils/mapUtils.js";
+import { calculateDistance, calculateFare, generateOTP } from "../utils/ambulance.js";
 
 export const createRide = async (req, res) => {
   const { vehicle, pickup, drop, emergency } = req.body;
@@ -17,7 +13,6 @@ export const createRide = async (req, res) => {
     );
   }
 
-  // Validate ambulance type with new types
   const validVehicleTypes = ["bls", "als", "ccs", "auto", "bike"];
   if (!validVehicleTypes.includes(vehicle)) {
     throw new BadRequestError(
@@ -25,7 +20,6 @@ export const createRide = async (req, res) => {
     );
   }
 
-  // Validate emergency information if provided
   if (emergency) {
     const validEmergencyTypes = ['cardiac', 'trauma', 'respiratory', 'neurological', 'pediatric', 'obstetric', 'psychiatric', 'burns', 'poisoning', 'general'];
     const validPriorities = ['low', 'medium', 'high', 'critical'];
@@ -43,11 +37,7 @@ export const createRide = async (req, res) => {
     }
   }
 
-  const {
-    address: pickupAddress,
-    latitude: pickupLat,
-    longitude: pickupLon,
-  } = pickup;
+  const { address: pickupAddress, latitude: pickupLat, longitude: pickupLon } = pickup;
 
   const { address: dropAddress, latitude: dropLat, longitude: dropLon } = drop;
 
@@ -79,7 +69,7 @@ export const createRide = async (req, res) => {
       },
       drop: { address: dropAddress, latitude: dropLat, longitude: dropLon },
       customer: patient.id,
-      emergency: emergency || null, // Include emergency information
+      emergency: emergency || null,
       otp: generateOTP(),
     });
 
@@ -241,6 +231,10 @@ export const getAvailableRides = async (req, res) => {
       query.vehicle = vehicle;
     }
 
+    if (emergency) {
+      query['emergency.type'] = emergency;
+    }
+
     // Get driver information for filtering and scoring
     let driver = null;
     if (req.user.role === "driver") {
@@ -329,7 +323,6 @@ export const getAvailableRides = async (req, res) => {
   }
 };
 
-// Helper function to get related specializations for cross-specialty matching
 const getRelatedSpecializations = (emergencyType) => {
   const relatedMap = {
     'cardiac': ['general', 'respiratory'], // Cardiac issues often relate to breathing

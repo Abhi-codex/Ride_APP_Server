@@ -13,7 +13,6 @@ export const calculateDistance = (lat1, lon1, lat2, lon2) => {
 };
 
 export const calculateFare = (distance, ambulanceType = null, hospitalFareFormula = null) => {
-  // Default rate structure for independent drivers
   const rateStructure = {
     bls: { baseFare: 50, perKmRate: 15, minimumFare: 100 }, // Basic Life Support
     als: { baseFare: 80, perKmRate: 20, minimumFare: 150 }, // Advanced Life Support
@@ -27,7 +26,7 @@ export const calculateFare = (distance, ambulanceType = null, hospitalFareFormul
     return Math.max(calculatedFare, minimumFare);
   };
 
-  // If hospital fare formula is provided (for affiliated drivers), use it for specific ambulance type
+  // If hospital fare formula is provided
   if (hospitalFareFormula && ambulanceType) {
     return {
       [ambulanceType]: fareCalculation(

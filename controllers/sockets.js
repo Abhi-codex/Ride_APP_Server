@@ -1,5 +1,6 @@
 import geolib from "geolib";
 import jwt from "jsonwebtoken";
+import process from "process";
 import User from "../models/User.js";
 import Ride from "../models/Ride.js";
 
@@ -128,6 +129,7 @@ const handleSocketConnection = (io) => {
         const rideData = await Ride.findById(rideId).populate("customer rider");
         socket.emit("rideData", rideData);
       } catch (error) {
+        console.error("Failed to receive emergency call data:", error);
         socket.emit("error", { message: "Failed to receive emergency call data" });
       }
     });

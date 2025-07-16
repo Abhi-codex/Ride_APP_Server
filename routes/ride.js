@@ -1,12 +1,5 @@
 import express from "express";
-import {
-  createRide,
-  updateRideStatus,
-  acceptRide,
-  getMyRides,
-  getAvailableRides,
-  rateRide,
-} from "../controllers/ride.js";
+import { createRide, updateRideStatus, acceptRide, getMyRides, getAvailableRides, rateRide } from "../controllers/ride.js";
 
 const router = express.Router();
 

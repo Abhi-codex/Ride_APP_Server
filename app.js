@@ -4,6 +4,7 @@ import EventEmitter from 'events';
 import express from 'express';
 import http from 'http';
 import mongoose from 'mongoose';
+import process from 'process';
 import { Server as socketIo } from 'socket.io'; 
 import connectDB from './config/connect.js';
 import notFoundMiddleware from './middleware/not-found.js';
@@ -92,6 +93,7 @@ app.use(errorHandlerMiddleware);
 
 const start = async () => {
   const PORT = process.env.PORT || 3000;
+  // eslint-disable-next-line no-unused-vars
   const server_instance = server.listen(PORT, "0.0.0.0", () => {
     console.log(`🚀 Service Server running on http://localhost:${PORT}`);
     console.log(`🌐 Network access: http://192.168.34.247:${PORT}`);

@@ -11,77 +11,21 @@ export const calculateDriverStats = async (riderId) => {
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
 
   const statsAggregation = [
-    {
-      $match: {
-        rider: new mongoose.Types.ObjectId(riderId),
-        status: 'COMPLETED'
-      }
-    },
-    {
-      $facet: {
-        totalRides: [
-          { $count: "count" }
-        ],
-        
-        todayData: [
-          {
-            $match: {
-              createdAt: { $gte: today }
-            }
-          },
-          {
-            $group: {
-              _id: null,
-              rides: { $sum: 1 },
-              earnings: { $sum: "$fare" }
-            }
-          }
-        ],
-        
-        weeklyData: [
-          {
-            $match: {
-              createdAt: { $gte: weekStart }
-            }
-          },
-          {
-            $group: {
-              _id: null,
-              rides: { $sum: 1 },
-              earnings: { $sum: "$fare" }
-            }
-          }
-        ],
-        
-        monthlyData: [
-          {
-            $match: {
-              createdAt: { $gte: monthStart }
-            }
-          },
-          {
-            $group: {
-              _id: null,
-              earnings: { $sum: "$fare" }
-            }
-          }
-        ],
-        
-        ratingData: [
-          {
-            $match: {
-              rating: { $exists: true, $ne: null, $gte: 1 }
-            }
-          },
-          {
-            $group: {
-              _id: null,
-              averageRating: { $avg: "$rating" },
-              totalRatings: { $sum: 1 }
-            }
-          }
-        ]
-      }
+    { $match: { rider: new mongoose.Types.ObjectId(riderId), status: 'COMPLETED' }},
+    { $facet: { totalRides: [{ $count: "count" }],
+        todayData: [{ $match: {createdAt: { $gte: today }}},
+                    { $group: {_id: null, rides: { $sum: 1 }, earnings: { $sum: "$fare" }}}
+                   ],
+        weeklyData: [{ $match: {createdAt: { $gte: weekStart }}},
+                     { $group: { _id: null, rides: { $sum: 1 }, earnings: { $sum: "$fare" }}}
+                    ],
+        monthlyData: [{ $match: {createdAt: { $gte: monthStart }}},
+                      { $group: { _id: null, earnings: { $sum: "$fare" }}}
+                     ],
+        ratingData: [{ $match: {rating: { $exists: true, $ne: null, $gte: 1 }}},
+                     { $group: {_id: null, averageRating: { $avg: "$rating" }, totalRatings: { $sum: 1 }}}
+                    ]
+              }
     }
   ];
 
