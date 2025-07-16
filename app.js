@@ -10,7 +10,7 @@ import connectDB from './config/connect.js';
 import notFoundMiddleware from './middleware/not-found.js';
 import errorHandlerMiddleware from './middleware/error-handler.js';
 import authMiddleware from './middleware/authentication.js';
-
+import os from 'os';
 import authRouter from './routes/auth.js';
 import rideRouter from './routes/ride.js';
 import driverRouter from './routes/driver.js';
@@ -91,17 +91,30 @@ app.use("/hospitals", hospitalRouter);
 app.use(notFoundMiddleware);
 app.use(errorHandlerMiddleware);
 
+function getLocalIp() {
+  const interfaces = os.networkInterfaces();
+  for (const name of Object.keys(interfaces)) {
+    for (const iface of interfaces[name]) {
+      if (iface.family === 'IPv4' && !iface.internal) {
+        return iface.address;
+      }
+    }
+  }
+  return 'localhost';
+}
+
 const start = async () => {
   const PORT = process.env.PORT || 3000;
+  const localIp = getLocalIp();
   // eslint-disable-next-line no-unused-vars
   const server_instance = server.listen(PORT, "0.0.0.0", () => {
     console.log(`🚀 Service Server running on http://localhost:${PORT}`);
-    console.log(`🌐 Network access: http://192.168.34.247:${PORT}`);
-    console.log(`📍 Health check: http://192.168.34.247:${PORT}/health`);
-    console.log(`🔐 Auth endpoint: http://192.168.34.247:${PORT}/auth/signin`);
-    console.log(`🏥 Hospital search: http://192.168.34.247:${PORT}/hospitals/*`);
-    console.log(`🚨 Emergency calls: http://192.168.34.247:${PORT}/ride/*`);
-    console.log(`👨‍⚕️ Driver endpoints: http://192.168.34.247:${PORT}/driver/*`);
+    console.log(`🌐 Network access: http://${localIp}:${PORT}`);
+    console.log(`📍 Health check: http://${localIp}:${PORT}/health`);
+    console.log(`🔐 Auth endpoint: http://${localIp}:${PORT}/auth/signin`);
+    console.log(`🏥 Hospital search: http://${localIp}:${PORT}/hospitals/*`);
+    console.log(`🚨 Emergency calls: http://${localIp}:${PORT}/ride/*`);
+    console.log(`👨‍⚕️ Driver endpoints: http://${localIp}:${PORT}/driver/*`);
   });
 
   try {
