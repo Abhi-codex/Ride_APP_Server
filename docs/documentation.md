@@ -1,6 +1,6 @@
 # Complete Ambulance Booking System API Documentation
 
-This is the comprehensive documentation for the Emergency Medical Services (Ambulance) Booking System backend API.
+This is the comprehensive documentation for the Ambulance Booking System backend API.
 
 ## 🚑 System Overview
 

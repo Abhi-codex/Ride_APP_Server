@@ -1,2 +1,2 @@
-Backend Server for the InstaAid app.
+Backend Server for an Ambulance App
 Refer to the documentation.md for complete understanding.
