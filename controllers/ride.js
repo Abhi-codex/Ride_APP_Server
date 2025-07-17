@@ -219,7 +219,7 @@ export const getAvailableRides = async (req, res) => {
 
     // Build query for available rides
     const query = { status: "SEARCHING_FOR_RIDER" };
-    
+
     // Filter by ambulance type if specified
     if (vehicle) {
       const validVehicleTypes = ["bls", "als", "ccs", "auto", "bike"];
@@ -244,9 +244,35 @@ export const getAvailableRides = async (req, res) => {
       }
     }
 
+    // Only show rides created within the last 10 minutes
+    const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
+    query.createdAt = { $gte: tenMinutesAgo };
+
     let availableRides = await Ride.find(query)
       .populate("customer", "phone")
       .sort({ createdAt: -1 });
+
+    // Only show rides within 10 km radius of driver
+    if (driver && driver.location && driver.location.latitude && driver.location.longitude) {
+      const driverLat = driver.location.latitude;
+      const driverLon = driver.location.longitude;
+      availableRides = availableRides.filter(ride => {
+        if (!ride.pickup || !ride.pickup.latitude || !ride.pickup.longitude) return false;
+        const rideLat = ride.pickup.latitude;
+        const rideLon = ride.pickup.longitude;
+        // Haversine formula
+        const toRad = (value) => (value * Math.PI) / 180;
+        const R = 6371; // km
+        const dLat = toRad(rideLat - driverLat);
+        const dLon = toRad(rideLon - driverLon);
+        const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+          Math.cos(toRad(driverLat)) * Math.cos(toRad(rideLat)) *
+          Math.sin(dLon / 2) * Math.sin(dLon / 2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        const distance = R * c;
+        return distance <= 10;
+      });
+    }
 
     // If driver is authenticated and has specializations, apply smart matching
     if (driver && driver.vehicle?.specializations && driver.vehicle.specializations.length > 0) {
@@ -258,12 +284,12 @@ export const getAvailableRides = async (req, res) => {
         // If ride has emergency information
         if (ride.emergency && ride.emergency.type) {
           const emergencyType = ride.emergency.type;
-          
+
           // Perfect match: driver specializes in this emergency type
           if (driver.vehicle.specializations.includes(emergencyType)) {
             compatibilityScore += 100;
           }
-          
+
           // Related specializations (cross-specialty matching)
           const relatedSpecs = getRelatedSpecializations(emergencyType);
           const driverSpecs = driver.vehicle.specializations;
@@ -388,5 +414,22 @@ export const rateRide = async (req, res) => {
   } catch (error) {
     console.error("Error rating emergency call:", error);
     throw new BadRequestError("Failed to rate emergency call");
+  }
+};
+
+export const getAllAvailableRides = async (req, res) => {
+  try {
+    const rides = await Ride.find({ status: "SEARCHING_FOR_RIDER" })
+      .populate("customer", "name phone")
+      .sort({ createdAt: -1 });
+
+    res.status(StatusCodes.OK).json({
+      message: "Available rides retrieved successfully",
+      count: rides.length,
+      rides,
+    });
+  } catch (error) {
+    console.error("Error retrieving available rides:", error);
+    throw new BadRequestError("Failed to retrieve available rides");
   }
 };
