@@ -7,10 +7,13 @@ const hospitalSchema = new Schema(
     name: { type: String, required: true },
     location: { latitude: { type: Number, required: true },
                 longitude: { type: Number, required: true }},
-    emergencyServices: [{ type: String, 
+   emergencyServices: [{ 
+      type: String, 
       enum: ['emergency_room', 'cardiology', 'trauma_center', 'neurology', 'pediatrics', 'obstetrics',
-            'burn_unit', 'psychiatry', 'intensive_care', 'surgery', 'blood_bank' ],
-    }],
+            'burn_unit', 'psychiatry', 'intensive_care', 'surgery', 'blood_bank',
+            'respiratory', 'poisoning', 'general'
+  ],
+}],
     placeId: { type: String, unique: true, sparse: true },
     rating: { type: Number, min: 0, max: 5, default: null },
     phoneNumber: { type: String, default: null },

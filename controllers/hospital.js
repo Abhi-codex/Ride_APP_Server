@@ -1,5 +1,5 @@
 import Hospital from "../models/Hospital.js";
-import { BadRequestError, NotFoundError } from "../errors/index.js";
+import { BadRequestError } from "../errors/index.js";
 import { StatusCodes } from "http-status-codes";
 import { calculateDistance } from "../utils/ambulance.js";
 import https from "https";
@@ -184,7 +184,7 @@ const assessEmergencyCapability = (place, emergencyType) => {
 
 // Search hospitals using Google Places API
 export const searchHospitals = async (req, res) => {
-  const { lat, lng, emergency, radius = 10000 } = req.query;
+  const { lat, lng, emergency, radius = 5000 } = req.query;
   
   if (!lat || !lng) {
     throw new BadRequestError("Latitude and longitude are required");
@@ -193,7 +193,6 @@ export const searchHospitals = async (req, res) => {
   if (!process.env.GOOGLE_PLACES_API_KEY) {
     throw new BadRequestError("Google Places API not configured");
   }
-  
   try {
     const searchQueries = [
       `https://maps.googleapis.com/maps/api/place/nearbysearch/json?` +
@@ -218,144 +217,199 @@ export const searchHospitals = async (req, res) => {
       });
     }
 
-    const responses = await Promise.all(
-      searchQueries.map(async (url) => {
-        try {
-          const response = await fetch(url, {
-            method: 'GET',
-            headers: {
-              'User-Agent': 'Ambulance-Booking-System/1.0'
-            },
-            agent: httpsAgent
-          });
-          
-          if (!response.ok) {
-            throw new Error(`Google Places API request failed with status: ${response.status}`);
-          }
-          
-          return response;
-        } catch {
-          return {
-            ok: true,
-            json: async () => ({ status: 'ZERO_RESULTS', results: [] })
-          };
-        }
-      })
-    );
-
-    const allData = await Promise.all(
-      responses.map(async (response) => {
-        try {
-          const data = await response.json();
-          return data;
-        } catch {
-          return { status: 'ZERO_RESULTS', results: [] };
-        }
-      })
-    );
-
-    const allPlaces = new Map();
-    
-    allData.forEach(data => {
-      if (data.status === 'OK' && data.results) {
-        data.results.forEach(place => {
-          if (isEmergencyCapableHospital(place)) {
-            allPlaces.set(place.place_id, place);
-          }
-        });
-      }
-    });
-    
-    const hospitals = await Promise.all(
-      Array.from(allPlaces.values()).map(async (place) => {
-        const distance = calculateDistance(
-          parseFloat(lat), 
-          parseFloat(lng),
-          place.geometry.location.lat,
-          place.geometry.location.lng
-        );
-        const emergencyCapability = assessEmergencyCapability(place, emergency);
-
-        let photos = place.photos ? place.photos.slice(0, 1).map(photo => ({
-          photoReference: photo.photo_reference,
-          width: photo.width,
-          height: photo.height
-        })) : [];
-        
-        if (photos.length === 0 && (emergencyCapability.isVerified || place.rating >= 4.0)) {
+    let hospitals = [];
+    let apiError = false;
+    try {
+      const responses = await Promise.all(
+        searchQueries.map(async (url) => {
           try {
-            const detailsResponse = await fetch(
-              `https://maps.googleapis.com/maps/api/place/details/json?` +
-              `place_id=${place.place_id}&fields=photos&` +
-              `key=${process.env.GOOGLE_PLACES_API_KEY}`,
-              {
-                method: 'GET',
-                headers: {
-                  'User-Agent': 'Ambulance-Booking-System/1.0'
-                },
-                agent: httpsAgent
-              }
-            );
-            if (detailsResponse.ok) {
-              const detailsData = await detailsResponse.json();
-              if (detailsData.status === 'OK' && detailsData.result && detailsData.result.photos) {
-                photos = detailsData.result.photos.slice(0, 1).map(photo => ({
-                  photoReference: photo.photo_reference,
-                  width: photo.width,
-                  height: photo.height
-                }));
-              }
+            const response = await fetch(url, {
+              method: 'GET',
+              headers: {
+                'User-Agent': 'Ambulance-Booking-System/1.0'
+              },
+              agent: httpsAgent
+            });
+            if (!response.ok) {
+              throw new Error(`Google Places API request failed with status: ${response.status}`);
             }
+            return response;
           } catch {
-            // Silent fail for photo fetch
+            return {
+              ok: true,
+              json: async () => ({ status: 'ZERO_RESULTS', results: [] })
+            };
           }
+        })
+      );
+
+      const allData = await Promise.all(
+        responses.map(async (response) => {
+          try {
+            const data = await response.json();
+            return data;
+          } catch {
+            return { status: 'ZERO_RESULTS', results: [] };
+          }
+        })
+      );
+
+      const allPlaces = new Map();
+      allData.forEach(data => {
+        if (data.status === 'OK' && data.results) {
+          data.results.forEach(place => {
+            if (isEmergencyCapableHospital(place)) {
+              allPlaces.set(place.place_id, place);
+            }
+          });
         }
-        
-        return {
-          placeId: place.place_id,
-          name: place.name,
-          latitude: place.geometry.location.lat,
-          longitude: place.geometry.location.lng,
-          rating: place.rating || null,
-          address: place.vicinity || place.formatted_address,
-          emergencyServices: inferServicesFromPlace(place, emergency),
-          distance: parseFloat(distance.toFixed(2)),
-          isOpen: place.opening_hours?.open_now ?? null,
-          priceLevel: place.price_level || null,
-          photos: photos,
-          emergencyCapabilityScore: emergencyCapability.score,
-          emergencyFeatures: emergencyCapability.features,
-          isEmergencyVerified: emergencyCapability.isVerified
-        };
-      })
-    );
-    
-    console.log('Places that passed emergency capability check:', hospitals.length);
-    
+      });
+
+      hospitals = await Promise.all(
+        Array.from(allPlaces.values()).map(async (place) => {
+          const distance = calculateDistance(
+            parseFloat(lat), 
+            parseFloat(lng),
+            place.geometry.location.lat,
+            place.geometry.location.lng
+          );
+          const emergencyCapability = assessEmergencyCapability(place, emergency);
+
+          let photos = place.photos ? place.photos.slice(0, 1).map(photo => ({
+            photoReference: photo.photo_reference,
+            width: photo.width,
+            height: photo.height
+          })) : [];
+
+          if (photos.length === 0 && (emergencyCapability.isVerified || place.rating >= 4.0)) {
+            try {
+              const detailsResponse = await fetch(
+                `https://maps.googleapis.com/maps/api/place/details/json?` +
+                `place_id=${place.place_id}&fields=photos&` +
+                `key=${process.env.GOOGLE_PLACES_API_KEY}`,
+                {
+                  method: 'GET',
+                  headers: {
+                    'User-Agent': 'Ambulance-Booking-System/1.0'
+                  },
+                  agent: httpsAgent
+                }
+              );
+              if (detailsResponse.ok) {
+                const detailsData = await detailsResponse.json();
+                if (detailsData.status === 'OK' && detailsData.result && detailsData.result.photos) {
+                  photos = detailsData.result.photos.slice(0, 1).map(photo => ({
+                    photoReference: photo.photo_reference,
+                    width: photo.width,
+                    height: photo.height
+                  }));
+                }
+              }
+            } catch {
+              // Silent fail for photo fetch
+            }
+          }
+
+          // Upsert hospital in MongoDB
+          try {
+            await Hospital.findOneAndUpdate(
+              { placeId: place.place_id },
+              {
+                name: place.name,
+                location: {
+                  latitude: place.geometry.location.lat,
+                  longitude: place.geometry.location.lng
+                },
+                address: place.vicinity || place.formatted_address,
+                emergencyServices: inferServicesFromPlace(place, emergency),
+                placeId: place.place_id,
+                rating: place.rating || null,
+                phoneNumber: place.formatted_phone_number || null,
+                isVerified: emergencyCapability.isVerified,
+                lastUpdated: new Date()
+              },
+              { upsert: true, new: true, setDefaultsOnInsert: true }
+            );
+          } catch (err) {
+            console.error(`Error upserting hospital ${place.place_id}:`, err.message);
+          }
+
+          return {
+            placeId: place.place_id,
+            name: place.name,
+            latitude: place.geometry.location.lat,
+            longitude: place.geometry.location.lng,
+            rating: place.rating || null,
+            address: place.vicinity || place.formatted_address,
+            emergencyServices: inferServicesFromPlace(place, emergency),
+            distance: parseFloat(distance.toFixed(2)),
+            isOpen: place.opening_hours?.open_now ?? null,
+            priceLevel: place.price_level || null,
+            photos: photos,
+            emergencyCapabilityScore: emergencyCapability.score,
+            emergencyFeatures: emergencyCapability.features,
+            isEmergencyVerified: emergencyCapability.isVerified
+          };
+        })
+      );
+    } catch (apiErr) {
+      apiError = true;
+      console.error("Google Maps API failed, falling back to DB:", apiErr.message);
+    }
+
+    // If API failed or no hospitals found, fallback to DB
+    if (apiError || hospitals.length === 0) {
+      const dbHospitals = await Hospital.find({});
+      hospitals = dbHospitals.map(hospital => ({
+        placeId: hospital.placeId,
+        name: hospital.name,
+        latitude: hospital.location.latitude,
+        longitude: hospital.location.longitude,
+        rating: hospital.rating,
+        address: hospital.address,
+        emergencyServices: hospital.emergencyServices,
+        distance: lat && lng ? parseFloat(calculateDistance(
+          parseFloat(lat),
+          parseFloat(lng),
+          hospital.location.latitude,
+          hospital.location.longitude
+        ).toFixed(2)) : null,
+        isOpen: null,
+        priceLevel: null,
+        photos: [],
+        emergencyCapabilityScore: null,
+        emergencyFeatures: [],
+        isEmergencyVerified: hospital.isVerified
+      }));
+    }
+
+    // sorting and filtering logic
     hospitals.sort((a, b) => {
-      // First priority: Emergency verification status
+      // 1. Emergency verified first
       if (a.isEmergencyVerified && !b.isEmergencyVerified) return -1;
       if (!a.isEmergencyVerified && b.isEmergencyVerified) return 1;
-      
-      // Second priority: Emergency capability score
-      if (b.emergencyCapabilityScore !== a.emergencyCapabilityScore) {
-        return b.emergencyCapabilityScore - a.emergencyCapabilityScore;
+
+      // 2. Distance (closest first)
+      if (a.distance !== b.distance) return a.distance - b.distance;
+
+      // 3. Emergency capability score (higher first)
+      if ((b.emergencyCapabilityScore ?? 0) !== (a.emergencyCapabilityScore ?? 0)) {
+        return (b.emergencyCapabilityScore ?? 0) - (a.emergencyCapabilityScore ?? 0);
       }
-      
-      // Third priority: Emergency service relevance for specific emergency types
+
+      // 4. Emergency service relevance for specific emergency types
       if (emergency) {
         const relevantService = EMERGENCY_SERVICE_MAP[emergency];
         if (relevantService) {
           const aHasService = a.emergencyServices.includes(relevantService);
           const bHasService = b.emergencyServices.includes(relevantService);
-          
           if (aHasService && !bHasService) return -1;
           if (!aHasService && bHasService) return 1;
         }
       }
-      
-      // Fourth priority: Distance (closest first)
-      return a.distance - b.distance;
+
+      // 5. Alphabetical by name as final fallback
+      return a.name.localeCompare(b.name);
     });
 
     let minimumScore = 15;
@@ -364,12 +418,11 @@ export const searchHospitals = async (req, res) => {
     }
 
     const verifiedHospitals = hospitals.filter(hospital => {
-      return hospital.emergencyCapabilityScore >= minimumScore || 
+      return (hospital.emergencyCapabilityScore === null || hospital.emergencyCapabilityScore >= minimumScore) || 
              hospital.isEmergencyVerified ||
-             hospital.emergencyServices.length > 0;
+             (hospital.emergencyServices && hospital.emergencyServices.length > 0);
     });
 
-    // If we still have no hospitals, return the top 5 closest ones regardless of score
     if (verifiedHospitals.length === 0 && hospitals.length > 0) {
       const closestHospitals = hospitals
         .sort((a, b) => a.distance - b.distance)
@@ -378,7 +431,6 @@ export const searchHospitals = async (req, res) => {
           ...hospital,
           recommendation: "Nearest available hospital - verify emergency capabilities"
         }));
-      
       return res.status(StatusCodes.OK).json({
         message: "Emergency-capable hospitals retrieved successfully",
         count: closestHospitals.length,
@@ -408,95 +460,12 @@ export const searchHospitals = async (req, res) => {
         emergencyType: emergency || 'general'
       }
     });
-    
   } catch (error) {
     console.error("Error searching hospitals:", error);
     throw new BadRequestError("Failed to search hospitals: " + error.message);
   }
-};
-
-// Get hospital details by place ID
-export const getHospitalDetails = async (req, res) => {
-  const { placeId } = req.params;
-  
-  if (!placeId) {
-    throw new BadRequestError("Place ID is required");
-  }
-  
-  if (!process.env.GOOGLE_PLACES_API_KEY) {
-    throw new BadRequestError("Google Places API not configured");
-  }
-  
-  try {
-    const response = await fetch(
-      `https://maps.googleapis.com/maps/api/place/details/json?` +
-      `place_id=${placeId}&fields=name,formatted_address,geometry,rating,formatted_phone_number,opening_hours,website,photos&` +
-      `key=${process.env.GOOGLE_PLACES_API_KEY}`,
-      {
-        method: 'GET',
-        headers: {
-          'User-Agent': 'Ambulance-Booking-System/1.0'
-        },
-        agent: httpsAgent
-      }
-    );
-    
-    if (!response.ok) {
-      throw new Error('Google Places API request failed');
-    }
-    
-    const data = await response.json();
-    
-    if (data.status !== 'OK') {
-      throw new NotFoundError(`Hospital not found: ${data.status}`);
-    }
-    
-    const place = data.result;
-    
-    // Assess emergency capability for this specific hospital
-    const emergencyCapability = assessEmergencyCapability(place);
-    
-    // Process photos if available
-    const photos = place.photos ? place.photos.slice(0, 5).map(photo => ({
-      photoReference: photo.photo_reference,
-      width: photo.width,
-      height: photo.height,
-      attributions: photo.html_attributions || []
-    })) : [];
-    
-    const hospitalDetails = {
-      placeId: placeId,
-      name: place.name,
-      address: place.formatted_address,
-      latitude: place.geometry.location.lat,
-      longitude: place.geometry.location.lng,
-      rating: place.rating || null,
-      phoneNumber: place.formatted_phone_number || null,
-      website: place.website || null,
-      openingHours: place.opening_hours?.weekday_text || null,
-      isOpen: place.opening_hours?.open_now ?? null,
-      photos: photos,
-      emergencyCapabilityScore: emergencyCapability.score,
-      emergencyFeatures: emergencyCapability.features,
-      isEmergencyVerified: emergencyCapability.isVerified,
-      emergencyServices: inferServicesFromPlace(place),
-      recommendation: emergencyCapability.isVerified ? 
-        "Verified emergency-capable hospital" : 
-        emergencyCapability.score >= 30 ? 
-          "Likely emergency-capable hospital" : 
-          "Emergency capability uncertain - verify before directing emergency cases"
-    };
-    
-    res.status(StatusCodes.OK).json({
-      message: "Hospital details retrieved successfully",
-      hospital: hospitalDetails
-    });
-    
-  } catch (error) {
-    console.error("Error getting hospital details:", error);
-    throw new BadRequestError("Failed to get hospital details: " + error.message);
-  }
-};
+  // ...existing code for searchHospitals ends here...
+}
 
 // Create or update hospital in local database
 export const createHospital = async (req, res) => {
