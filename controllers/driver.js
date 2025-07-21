@@ -49,11 +49,30 @@ export const getDriverStats = async (req, res) => {
     const riderId = req.user.id;
     const stats = await calculateDriverStats(riderId);
 
+    // Find available ride requests for this driver
+    const driver = await User.findById(riderId);
+    let availableRides = [];
+    if (driver && driver.vehicle?.type) {
+      // Only show rides created within the last 10 minutes and matching ambulance type
+      const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
+      availableRides = await Ride.find({
+        status: "SEARCHING_FOR_RIDER",
+        vehicle: driver.vehicle.type,
+        createdAt: { $gte: tenMinutesAgo }
+      })
+      .populate("customer", "phone name")
+      .sort({ createdAt: -1 })
+      .select("_id vehicle pickup drop emergency customer createdAt");
+    }
+
     console.log('Driver stats calculated:', stats);
 
     res.json({
       success: true,
-      data: stats
+      data: {
+        ...stats,
+        availableRides
+      }
     });
 
   } catch (error) {
