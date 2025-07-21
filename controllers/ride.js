@@ -58,6 +58,32 @@ export const createRide = async (req, res) => {
     const distance = calculateDistance(pickupLat, pickupLon, dropLat, dropLon);
     const fare = calculateFare(distance);
 
+    // Fetch hospital details for drop location
+    let hospitalDetails = null;
+    try {
+      const hospitals = await import("./hospital.js");
+      // Use hospital search logic to find nearest hospital to drop location
+      const hospitalQuery = {
+        lat: dropLat,
+        lng: dropLon,
+        radius: 5000
+      };
+      // Simulate a request object for hospital search
+      const reqObj = { query: hospitalQuery };
+      const resObj = {
+        status: () => ({ json: (data) => data }),
+      };
+      const result = await hospitals.searchHospitals(reqObj, resObj);
+      if (result && result.hospitals && result.hospitals.length > 0) {
+        hospitalDetails = result.hospitals[0];
+      }
+    } catch (err) {
+      // Fallback to DB if API fails
+      const Hospital = (await import("../models/Hospital.js")).default;
+      const dbHospitals = await Hospital.find({});
+      hospitalDetails = dbHospitals.length > 0 ? dbHospitals[0] : null;
+    }
+
     const ride = new Ride({
       vehicle,
       distance,
@@ -71,13 +97,17 @@ export const createRide = async (req, res) => {
       customer: patient.id,
       emergency: emergency || null,
       otp: generateOTP(),
+      hospital: hospitalDetails ? hospitalDetails.placeId : null
     });
 
     await ride.save();
 
     res.status(StatusCodes.CREATED).json({
       message: "Emergency call created successfully",
-      ride,
+      ride: {
+        ...ride.toObject(),
+        hospitalDetails: hospitalDetails || null
+      },
     });
   } catch (error) {
     console.error(error);
@@ -200,6 +230,18 @@ export const getMyRides = async (req, res) => {
       .populate("customer", "name phone")
       .populate("rider", "name phone")
       .sort({ createdAt: -1 });
+
+    // Attach hospital details to each ride
+    const Hospital = (await import("../models/Hospital.js")).default;
+    const hospitalMap = {};
+    for (const ride of rides) {
+      if (ride.hospital) {
+        if (!hospitalMap[ride.hospital]) {
+          hospitalMap[ride.hospital] = await Hospital.findOne({ placeId: ride.hospital });
+        }
+        ride.hospitalDetails = hospitalMap[ride.hospital];
+      }
+    }
 
     res.status(StatusCodes.OK).json({
       message: "Emergency calls retrieved successfully",
@@ -334,6 +376,18 @@ export const getAvailableRides = async (req, res) => {
 
       // Optional: Filter to only show rides with minimum compatibility
       // availableRides = availableRides.filter(ride => ride.compatibilityScore >= 25);
+    }
+
+    // Attach hospital details to each available ride
+    const Hospital = (await import("../models/Hospital.js")).default;
+    const hospitalMap = {};
+    for (const ride of availableRides) {
+      if (ride.hospital) {
+        if (!hospitalMap[ride.hospital]) {
+          hospitalMap[ride.hospital] = await Hospital.findOne({ placeId: ride.hospital });
+        }
+        ride.hospitalDetails = hospitalMap[ride.hospital];
+      }
     }
 
     res.status(StatusCodes.OK).json({

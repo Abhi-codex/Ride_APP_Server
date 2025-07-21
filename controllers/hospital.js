@@ -21,6 +21,93 @@ const EMERGENCY_SERVICE_MAP = {
   burns: 'burn_unit'
 };
 
+// Get details for a specific hospital by placeId
+export const getHospitalDetails = async (req, res) => {
+  const { placeId } = req.params;
+  if (!placeId) {
+    return res.status(400).json({ error: "Missing placeId parameter" });
+  }
+  try {
+    // Fetch from Google Places API
+    if (!process.env.GOOGLE_PLACES_API_KEY) {
+      throw new BadRequestError("Google Places API not configured");
+    }
+    const detailsUrl = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${placeId}&fields=name,geometry,formatted_address,international_phone_number,website,rating,opening_hours,photos,types&key=${process.env.GOOGLE_PLACES_API_KEY}`;
+    const fetch = (await import('node-fetch')).default;
+    const response = await fetch(detailsUrl, { agent: httpsAgent });
+    const data = await response.json();
+    if (!data.result) {
+      return res.status(404).json({ error: "Hospital not found in Google Places" });
+    }
+    // Fetch from local DB
+    const dbHospital = await Hospital.findOne({ placeId });
+    const result = data.result;
+    // Format photos
+    let photos = [];
+    if (result.photos && Array.isArray(result.photos)) {
+      photos = result.photos.slice(0, 5).map(photo => ({
+        photoReference: photo.photo_reference,
+        width: photo.width,
+        height: photo.height,
+        attributions: photo.html_attributions || []
+      }));
+    }
+    // Emergency capability score (simple example)
+    let emergencyCapabilityScore = 0;
+    let emergencyFeatures = [];
+    let isEmergencyVerified = false;
+    let emergencyServices = [];
+    // Use types and DB info to infer emergency capability
+    if (result.types && result.types.includes('hospital')) {
+      emergencyCapabilityScore += 20;
+      emergencyFeatures.push('Hospital facility');
+    }
+    if (result.name && /emergency|trauma|critical|ICU|intensive/i.test(result.name)) {
+      emergencyCapabilityScore += 25;
+      emergencyFeatures.push('Emergency facility');
+      isEmergencyVerified = true;
+    }
+    if (result.rating && result.rating >= 4.0) {
+      emergencyCapabilityScore += 10;
+      emergencyFeatures.push('High patient rating (4.0+)');
+    }
+    if (result.opening_hours && result.opening_hours.open_now) {
+      emergencyCapabilityScore += 10;
+      emergencyFeatures.push('Currently open/24-7 operations');
+    }
+    if (dbHospital && dbHospital.emergencyServices) {
+      emergencyServices = dbHospital.emergencyServices;
+      emergencyCapabilityScore += 15;
+      emergencyFeatures.push('Emergency services from DB');
+      if (dbHospital.isVerified) isEmergencyVerified = true;
+    }
+    // Recommendation
+    let recommendation = isEmergencyVerified ? "Verified emergency-capable hospital" : "General hospital";
+    // Format response
+    const hospitalDetails = {
+      placeId,
+      name: result.name || dbHospital?.name,
+      address: result.formatted_address || dbHospital?.address,
+      latitude: result.geometry?.location?.lat || dbHospital?.location?.latitude,
+      longitude: result.geometry?.location?.lng || dbHospital?.location?.longitude,
+      rating: result.rating || dbHospital?.rating,
+      phoneNumber: result.international_phone_number || dbHospital?.phoneNumber,
+      website: result.website || null,
+      openingHours: result.opening_hours?.weekday_text || [],
+      isOpen: result.opening_hours?.open_now || false,
+      photos,
+      emergencyCapabilityScore,
+      emergencyFeatures,
+      isEmergencyVerified,
+      emergencyServices,
+      recommendation
+    };
+    res.status(200).json({ message: "Hospital details retrieved successfully", hospital: hospitalDetails });
+  } catch (error) {
+    console.error("Error fetching hospital details:", error);
+    res.status(500).json({ error: "Failed to fetch hospital details" });
+  }
+};
 const SERVICE_MAP = {
   cardiac: ['cardiology', 'intensive_care', 'surgery'],
   trauma: ['trauma_center', 'surgery', 'intensive_care', 'blood_bank'],
