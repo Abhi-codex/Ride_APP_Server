@@ -3,6 +3,34 @@ import Ride from '../models/Ride.js';
 import User from '../models/User.js';
 import Driver from '../models/Driver.js';
 
+export const updateDriverProfile = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { name, email, vehicle, hospitalAffiliation } = req.body;
+
+    // Update User basic info
+    const userUpdate = {};
+    if (name) userUpdate.name = name;
+    if (email) userUpdate.email = email;
+    if (Object.keys(userUpdate).length > 0) {
+      await User.findByIdAndUpdate(userId, userUpdate);
+    }
+
+    // Update Driver profile info
+    const driverUpdate = {};
+    if (vehicle) driverUpdate.vehicle = vehicle;
+    if (hospitalAffiliation) driverUpdate.hospitalAffiliation = hospitalAffiliation;
+    if (Object.keys(driverUpdate).length > 0) {
+      await Driver.findOneAndUpdate({ user: userId }, driverUpdate);
+    }
+
+    res.json({ success: true, message: 'Profile updated successfully' });
+  } catch (error) {
+    console.error('Error updating driver profile:', error, req.body);
+    res.status(500).json({ success: false, message: 'Failed to update profile', error: error.message });
+  }
+};
+
 export const calculateDriverStats = async (riderId) => {
   const now = new Date();
   
