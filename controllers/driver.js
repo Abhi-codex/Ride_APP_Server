@@ -147,66 +147,62 @@ export const updateOnlineStatus = async (req, res) => {
 export const updateVehicleInfo = async (req, res) => {
   try {
     const userId = req.user.id;
-    const { type, plateNumber, model, licenseNumber, certificationLevel, specializations } = req.body;
-    // Debug log incoming payload
-    console.log('updateVehicleInfo payload:', req.body);
-
-    // Validate types to prevent NaN or invalid values
-    if (type && typeof type !== 'string') {
+    // Accept either flat fields or a full vehicle object
+    let vehicle = req.body.vehicle || {};
+    // If flat fields are present, merge them into vehicle
+    const flatFields = ['type', 'plateNumber', 'model', 'licenseNumber', 'certificationLevel', 'specializations'];
+    for (const field of flatFields) {
+      if (req.body[field] !== undefined) vehicle[field] = req.body[field];
+    }
+    // Clean up empty strings to null
+    for (const key in vehicle) {
+      if (vehicle[key] === "") vehicle[key] = null;
+    }
+    // Validate types
+    if (vehicle.type && typeof vehicle.type !== 'string') {
       console.error('[400] updateVehicleInfo: Invalid type', { userId, payload: req.body });
       return res.status(400).json({ success: false, message: 'Ambulance type must be a string.' });
     }
-    if (plateNumber && typeof plateNumber !== 'string') {
+    if (vehicle.plateNumber && typeof vehicle.plateNumber !== 'string') {
       console.error('[400] updateVehicleInfo: Invalid plateNumber', { userId, payload: req.body });
       return res.status(400).json({ success: false, message: 'Plate number must be a string.' });
     }
-    if (model && typeof model !== 'string') {
+    if (vehicle.model && typeof vehicle.model !== 'string') {
       console.error('[400] updateVehicleInfo: Invalid model', { userId, payload: req.body });
       return res.status(400).json({ success: false, message: 'Model must be a string.' });
     }
-    if (licenseNumber && typeof licenseNumber !== 'string') {
+    if (vehicle.licenseNumber && typeof vehicle.licenseNumber !== 'string') {
       console.error('[400] updateVehicleInfo: Invalid licenseNumber', { userId, payload: req.body });
       return res.status(400).json({ success: false, message: 'License number must be a string.' });
     }
-    if (certificationLevel && typeof certificationLevel !== 'string') {
+    if (vehicle.certificationLevel && typeof vehicle.certificationLevel !== 'string') {
       console.error('[400] updateVehicleInfo: Invalid certificationLevel', { userId, payload: req.body });
       return res.status(400).json({ success: false, message: 'Certification level must be a string.' });
     }
-    if (specializations && !Array.isArray(specializations)) {
+    if (vehicle.specializations && !Array.isArray(vehicle.specializations)) {
       console.error('[400] updateVehicleInfo: Invalid specializations', { userId, payload: req.body });
       return res.status(400).json({ success: false, message: 'Specializations must be an array of strings.' });
     }
-
     // Use Driver model enums
     const validTypes = ["bls", "als", "ccs", "auto", "bike"];
-    if (type && !validTypes.includes(type)) {
+    if (vehicle.type && !validTypes.includes(vehicle.type)) {
       console.error('[400] updateVehicleInfo: Invalid ambulance type', { userId, payload: req.body });
       return res.status(400).json({ success: false, message: 'Invalid ambulance type. Valid types: bls, als, ccs, auto, bike' });
     }
     const validCertifications = ["EMT-Basic", "EMT-Intermediate", "EMT-Paramedic", "Critical Care"];
-    if (certificationLevel && !validCertifications.includes(certificationLevel)) {
+    if (vehicle.certificationLevel && !validCertifications.includes(vehicle.certificationLevel)) {
       console.error('[400] updateVehicleInfo: Invalid certification level', { userId, payload: req.body });
       return res.status(400).json({ success: false, message: 'Invalid certification level. Valid levels: EMT-Basic, EMT-Intermediate, EMT-Paramedic, Critical Care' });
     }
-
-    // Prevent empty/undefined values from being set
-    const updateData = {};
-    if (type) updateData['vehicle.type'] = type;
-    if (plateNumber) updateData['vehicle.plateNumber'] = plateNumber;
-    if (model) updateData['vehicle.model'] = model;
-    if (licenseNumber) updateData['vehicle.licenseNumber'] = licenseNumber;
-    if (certificationLevel) updateData['vehicle.certificationLevel'] = certificationLevel;
-    if (specializations) updateData['vehicle.specializations'] = specializations;
-
     // If no fields provided, return error
-    if (Object.keys(updateData).length === 0) {
+    if (Object.keys(vehicle).length === 0) {
       console.error('[400] updateVehicleInfo: No valid vehicle fields provided', { userId, payload: req.body });
       return res.status(400).json({ success: false, message: 'No valid vehicle fields provided to update.' });
     }
-
+    // Update the whole vehicle subdocument atomically
     const updatedDriver = await Driver.findOneAndUpdate(
       { user: userId },
-      { $set: updateData },
+      { $set: { vehicle } },
       { new: true, select: 'vehicle' }
     );
     if (!updatedDriver) {
