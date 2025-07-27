@@ -24,12 +24,23 @@ export const auth = async (req, res) => {
         throw new BadRequestError("Phone number and role do not match");
       }
 
+      // Fetch driver profile if role is driver
+      let driverProfile = null;
+      if (user.role === 'driver') {
+        driverProfile = await (await import("../models/Driver.js")).default.findOne({ user: user._id }).lean();
+      }
+      const userResponse = {
+        ...user.toObject(),
+        vehicle: driverProfile?.vehicle || null,
+        hospitalAffiliation: driverProfile?.hospitalAffiliation || null,
+      };
+
       const accessToken = user.createAccessToken();
       const refreshToken = user.createRefreshToken();
 
       return res.status(StatusCodes.OK).json({
         message: "User logged in successfully",
-        user,
+        user: userResponse,
         access_token: accessToken,
         refresh_token: refreshToken,
       });
@@ -41,8 +52,8 @@ export const auth = async (req, res) => {
     });
     await user.save();
 
-
     // Create role-specific profile
+    let driverProfile = null;
     if (role === "doctor") {
       const Doctor = (await import("../models/Doctor.js")).default;
       await Doctor.create({ user: user._id, specialties: [], bio: "", availableSlots: [] });
@@ -52,7 +63,7 @@ export const auth = async (req, res) => {
     } else if (role === "driver") {
       // Allow driver registration without vehicle info
       const Driver = (await import("../models/Driver.js")).default;
-      await Driver.create({
+      driverProfile = await Driver.create({
         user: user._id,
         vehicle: vehicle || undefined,
         hospitalAffiliation: hospitalAffiliation || undefined,
@@ -60,12 +71,23 @@ export const auth = async (req, res) => {
       });
     }
 
+    // Fetch driver profile if role is driver (for lean consistency)
+    let driverProfileLean = null;
+    if (role === 'driver') {
+      driverProfileLean = await (await import("../models/Driver.js")).default.findOne({ user: user._id }).lean();
+    }
+    const userResponse = {
+      ...user.toObject(),
+      vehicle: driverProfileLean?.vehicle || null,
+      hospitalAffiliation: driverProfileLean?.hospitalAffiliation || null,
+    };
+
     const accessToken = user.createAccessToken();
     const refreshToken = user.createRefreshToken();
 
     res.status(StatusCodes.CREATED).json({
       message: "User created successfully",
-      user,
+      user: userResponse,
       access_token: accessToken,
       refresh_token: refreshToken,
     });
