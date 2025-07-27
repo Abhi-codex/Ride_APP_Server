@@ -5,7 +5,7 @@ import jwt from "jsonwebtoken";
 import process from "process";
 
 export const auth = async (req, res) => {
-  const { phone, role } = req.body;
+  const { phone, role, vehicle, hospitalAffiliation, isOnline } = req.body;
 
   if (!phone) {
     throw new BadRequestError("Phone number is required");
@@ -49,8 +49,17 @@ export const auth = async (req, res) => {
       const Patient = (await import("../models/Patient.js")).default;
       await Patient.create({ user: user._id });
     } else if (role === "driver") {
+      // Require vehicle.type and vehicle.plateNumber for driver registration
+      if (!vehicle || !vehicle.type || !vehicle.plateNumber) {
+        throw new BadRequestError("Driver registration requires vehicle.type and vehicle.plateNumber");
+      }
       const Driver = (await import("../models/Driver.js")).default;
-      await Driver.create({ user: user._id });
+      await Driver.create({
+        user: user._id,
+        vehicle,
+        hospitalAffiliation: hospitalAffiliation || undefined,
+        isOnline: isOnline || false
+      });
     }
 
     const accessToken = user.createAccessToken();
