@@ -148,15 +148,48 @@ export const updateVehicleInfo = async (req, res) => {
   try {
     const userId = req.user.id;
     const { type, plateNumber, model, licenseNumber, certificationLevel, specializations } = req.body;
+    // Debug log incoming payload
+    console.log('updateVehicleInfo payload:', req.body);
+
+    // Validate types to prevent NaN or invalid values
+    if (type && typeof type !== 'string') {
+      console.error('[400] updateVehicleInfo: Invalid type', { userId, payload: req.body });
+      return res.status(400).json({ success: false, message: 'Ambulance type must be a string.' });
+    }
+    if (plateNumber && typeof plateNumber !== 'string') {
+      console.error('[400] updateVehicleInfo: Invalid plateNumber', { userId, payload: req.body });
+      return res.status(400).json({ success: false, message: 'Plate number must be a string.' });
+    }
+    if (model && typeof model !== 'string') {
+      console.error('[400] updateVehicleInfo: Invalid model', { userId, payload: req.body });
+      return res.status(400).json({ success: false, message: 'Model must be a string.' });
+    }
+    if (licenseNumber && typeof licenseNumber !== 'string') {
+      console.error('[400] updateVehicleInfo: Invalid licenseNumber', { userId, payload: req.body });
+      return res.status(400).json({ success: false, message: 'License number must be a string.' });
+    }
+    if (certificationLevel && typeof certificationLevel !== 'string') {
+      console.error('[400] updateVehicleInfo: Invalid certificationLevel', { userId, payload: req.body });
+      return res.status(400).json({ success: false, message: 'Certification level must be a string.' });
+    }
+    if (specializations && !Array.isArray(specializations)) {
+      console.error('[400] updateVehicleInfo: Invalid specializations', { userId, payload: req.body });
+      return res.status(400).json({ success: false, message: 'Specializations must be an array of strings.' });
+    }
+
     // Use Driver model enums
     const validTypes = ["bls", "als", "ccs", "auto", "bike"];
     if (type && !validTypes.includes(type)) {
+      console.error('[400] updateVehicleInfo: Invalid ambulance type', { userId, payload: req.body });
       return res.status(400).json({ success: false, message: 'Invalid ambulance type. Valid types: bls, als, ccs, auto, bike' });
     }
     const validCertifications = ["EMT-Basic", "EMT-Intermediate", "EMT-Paramedic", "Critical Care"];
     if (certificationLevel && !validCertifications.includes(certificationLevel)) {
+      console.error('[400] updateVehicleInfo: Invalid certification level', { userId, payload: req.body });
       return res.status(400).json({ success: false, message: 'Invalid certification level. Valid levels: EMT-Basic, EMT-Intermediate, EMT-Paramedic, Critical Care' });
     }
+
+    // Prevent empty/undefined values from being set
     const updateData = {};
     if (type) updateData['vehicle.type'] = type;
     if (plateNumber) updateData['vehicle.plateNumber'] = plateNumber;
@@ -164,17 +197,30 @@ export const updateVehicleInfo = async (req, res) => {
     if (licenseNumber) updateData['vehicle.licenseNumber'] = licenseNumber;
     if (certificationLevel) updateData['vehicle.certificationLevel'] = certificationLevel;
     if (specializations) updateData['vehicle.specializations'] = specializations;
+
+    // If no fields provided, return error
+    if (Object.keys(updateData).length === 0) {
+      console.error('[400] updateVehicleInfo: No valid vehicle fields provided', { userId, payload: req.body });
+      return res.status(400).json({ success: false, message: 'No valid vehicle fields provided to update.' });
+    }
+
     const updatedDriver = await Driver.findOneAndUpdate(
       { user: userId },
       { $set: updateData },
       { new: true, select: 'vehicle' }
     );
     if (!updatedDriver) {
+      console.error('[404] updateVehicleInfo: Driver not found', { userId, payload: req.body });
       return res.status(404).json({ success: false, message: 'Driver not found' });
     }
     res.json({ success: true, message: 'Ambulance information updated successfully', data: { vehicle: updatedDriver.vehicle } });
   } catch (error) {
-    console.error('Error updating ambulance information:', error);
+    console.error('[500] updateVehicleInfo: Error updating ambulance information', {
+      userId,
+      payload: req.body,
+      error: error.message,
+      stack: error.stack
+    });
     res.status(500).json({ success: false, message: 'Failed to update ambulance information', error: error.message });
   }
 };
