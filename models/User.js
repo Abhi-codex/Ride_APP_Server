@@ -14,6 +14,20 @@ const userSchema = new Schema(
   { timestamps: true }
 );
 
+// Method to create JWT refresh token
+userSchema.methods.createRefreshToken = function () {
+  return jwt.sign(
+    {
+      id: this._id,
+      phone: this.phone,
+    },
+    process.env.REFRESH_TOKEN_SECRET,
+    {
+      expiresIn: process.env.REFRESH_TOKEN_EXPIRY,
+    }
+  );
+};
+
 // Virtual to populate doctor profile if user is a doctor
 userSchema.virtual("doctorProfile", {
   ref: "Doctor",
