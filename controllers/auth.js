@@ -5,6 +5,7 @@ import jwt from "jsonwebtoken";
 import process from "process";
 
 export const auth = async (req, res) => {
+  console.log('AUTH REQUEST BODY:', req.body);
   const { phone, role, vehicle, hospitalAffiliation, isOnline } = req.body;
 
   if (!phone) {
@@ -72,7 +73,7 @@ export const auth = async (req, res) => {
       refresh_token: refreshToken,
     });
   } catch (error) {
-    console.error(error);
+    console.error('AUTH ERROR:', error);
     throw error;
   }
 };
