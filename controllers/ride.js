@@ -138,14 +138,18 @@ export const acceptRide = async (req, res) => {
 
     // Get driver details to check for hospital affiliation
     const driver = await User.findById(driverId);
-    if (!driver) {
-      throw new BadRequestError("Driver not found");
+    // Use Driver model for vehicle info
+    const driverProfile = await (await import("../models/Driver.js")).default.findOne({ user: driverId });
+    if (!driverProfile) {
+      throw new BadRequestError("Driver profile not found");
     }
-
+    if (!driverProfile.vehicle || !driverProfile.vehicle.type) {
+      throw new BadRequestError("Driver must complete vehicle profile before accepting rides");
+    }
     // Validate driver has the required ambulance type
-    if (driver.vehicle.type !== ride.vehicle) {
+    if (driverProfile.vehicle.type !== ride.vehicle) {
       throw new BadRequestError(
-        `Driver's ambulance type (${driver.vehicle.type}) does not match required type (${ride.vehicle})`
+        `Driver's ambulance type (${driverProfile.vehicle.type}) does not match required type (${ride.vehicle})`
       );
     }
 
@@ -280,9 +284,9 @@ export const getAvailableRides = async (req, res) => {
     // Get driver information for filtering and scoring
     let driver = null;
     if (req.user.role === "driver") {
-      driver = await User.findById(driverId);
-      if (driver && driver.vehicle?.type) {
-        query.vehicle = driver.vehicle.type;
+      const driverProfile = await (await import("../models/Driver.js")).default.findOne({ user: driverId });
+      if (driverProfile && driverProfile.vehicle && driverProfile.vehicle.type) {
+        query.vehicle = driverProfile.vehicle.type;
       }
     }
 

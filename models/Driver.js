@@ -3,8 +3,8 @@ import mongoose from "mongoose";
 const DriverSchema = new mongoose.Schema({
   user: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true, unique: true },
   vehicle: {
-    type: { type: String, enum: ["bls", "als", "ccs", "auto", "bike"], required: true },
-    plateNumber: { type: String, required: true },
+    type: { type: String, enum: ["bls", "als", "ccs", "auto", "bike"], required: false },
+    plateNumber: { type: String, required: false },
     model: { type: String },
     licenseNumber: { type: String },
     certificationLevel: {

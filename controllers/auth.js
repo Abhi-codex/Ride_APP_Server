@@ -50,14 +50,11 @@ export const auth = async (req, res) => {
       const Patient = (await import("../models/Patient.js")).default;
       await Patient.create({ user: user._id });
     } else if (role === "driver") {
-      // Require vehicle.type and vehicle.plateNumber for driver registration
-      if (!vehicle || !vehicle.type || !vehicle.plateNumber) {
-        throw new BadRequestError("Driver registration requires vehicle.type and vehicle.plateNumber");
-      }
+      // Allow driver registration without vehicle info
       const Driver = (await import("../models/Driver.js")).default;
       await Driver.create({
         user: user._id,
-        vehicle,
+        vehicle: vehicle || undefined,
         hospitalAffiliation: hospitalAffiliation || undefined,
         isOnline: isOnline || false
       });
