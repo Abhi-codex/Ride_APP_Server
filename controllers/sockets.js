@@ -25,6 +25,74 @@ const handleSocketConnection = (io) => {
   });
 
   io.on("connection", (socket) => {
+    // Doctor-Patient Chat Events
+    // Join a chat room (per appointment or doctor-patient pair)
+    socket.on("joinChat", ({ appointmentId, otherUserId }) => {
+      if (!appointmentId && !otherUserId) {
+        return socket.emit("error", { message: "Missing appointmentId or otherUserId for chat room." });
+      }
+      // Room name: prefer appointment-based, else user-pair
+      const room = appointmentId ? `chat_${appointmentId}` : [user.id, otherUserId].sort().join(":");
+      socket.join(room);
+      socket.emit("joinedChat", { room });
+      console.log(`User ${user.id} joined chat room ${room}`);
+    });
+
+    // Send a chat message
+    socket.on("sendMessage", async ({ appointmentId, receiverId, content, type = "text" }) => {
+      if (!content || !receiverId) {
+        return socket.emit("error", { message: "Missing content or receiverId." });
+      }
+      const Message = (await import("../models/Message.js")).default;
+      // Save message to DB
+      const messageDoc = await Message.create({
+        appointment: appointmentId,
+        sender: user.id,
+        receiver: receiverId,
+        content,
+        type,
+        timestamp: new Date()
+      });
+      // Room name logic (match joinChat)
+      const room = appointmentId ? `chat_${appointmentId}` : [user.id, receiverId].sort().join(":");
+      io.to(room).emit("newMessage", {
+        _id: messageDoc._id,
+        appointment: appointmentId,
+        sender: user.id,
+        receiver: receiverId,
+        content,
+        type,
+        timestamp: messageDoc.timestamp
+      });
+    });
+
+    // Fetch chat history
+    socket.on("fetchMessages", async ({ appointmentId, otherUserId, limit = 50, skip = 0 }) => {
+      try {
+        const Message = (await import("../models/Message.js")).default;
+        let query = {};
+        if (appointmentId) {
+          query.appointment = appointmentId;
+        } else if (otherUserId) {
+          // Fetch all messages between these two users
+          query.$or = [
+            { sender: user.id, receiver: otherUserId },
+            { sender: otherUserId, receiver: user.id }
+          ];
+        } else {
+          return socket.emit("error", { message: "Missing appointmentId or otherUserId for chat history." });
+        }
+        const messages = await Message.find(query)
+          .sort({ timestamp: -1 })
+          .skip(skip)
+          .limit(limit)
+          .lean();
+        socket.emit("chatHistory", messages.reverse());
+      } catch (err) {
+        console.error("Error fetching chat history:", err);
+        socket.emit("error", { message: "Failed to fetch chat history" });
+      }
+    });
     const user = socket.user;
     console.log(`User Joined: ${user.id} (${user.role})`);
 

@@ -11,10 +11,12 @@ import notFoundMiddleware from './middleware/not-found.js';
 import errorHandlerMiddleware from './middleware/error-handler.js';
 import authMiddleware from './middleware/authentication.js';
 import os from 'os';
+
 import authRouter from './routes/auth.js';
 import rideRouter from './routes/ride.js';
 import driverRouter from './routes/driver.js';
 import hospitalRouter from './routes/hospital.js';
+import messageRouter from './routes/message.js';
 
 import handleSocketConnection from './controllers/sockets.js';
 
@@ -36,6 +38,7 @@ app.use((req, res, next) => {
   }
 });
 
+
 app.use(express.json());
 
 app.use((req, res, next) => {
@@ -52,7 +55,11 @@ app.use((req, res, next) => {
   return next();
 });
 
+
 handleSocketConnection(io);
+
+// REST API for chat/messages
+app.use('/messages', messageRouter);
 
 app.get('/health', (req, res) => {
   res.status(200).json({ 
