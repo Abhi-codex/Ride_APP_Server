@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import Ride from '../models/Ride.js';
 import User from '../models/User.js';
+import Driver from '../models/Driver.js';
 
 export const calculateDriverStats = async (riderId) => {
   const now = new Date();
@@ -87,154 +88,90 @@ export const getDriverStats = async (req, res) => {
 
 export const getDriverProfile = async (req, res) => {
   try {
-    const riderId = req.user.id;
-    
-    const rider = await User.findById(riderId)
-      .select('-__v') 
-      .lean(); 
-
-    if (!rider) {
-      return res.status(404).json({
-        success: false,
-        message: 'Driver profile not found'
-      });
+    const userId = req.user.id;
+    const user = await User.findById(userId).select('-__v').lean();
+    if (!user || user.role !== 'driver') {
+      return res.status(404).json({ success: false, message: 'Driver not found' });
     }
-
+    const driver = await Driver.findOne({ user: userId }).lean();
+    if (!driver) {
+      return res.status(404).json({ success: false, message: 'Driver profile not found' });
+    }
     const profileData = {
-      _id: rider._id,
-      name: rider.name || 'Driver',
-      email: rider.email,
-      phone: rider.phone,
-      role: rider.role,
-      isOnline: rider.isOnline || false,
-      vehicle: rider.vehicle || null,
-      createdAt: rider.createdAt
+      _id: user._id,
+      name: user.name || 'Driver',
+      email: user.email,
+      phone: user.phone,
+      role: user.role,
+      isOnline: driver.isOnline || false,
+      vehicle: driver.vehicle || null,
+      hospitalAffiliation: driver.hospitalAffiliation || null,
+      createdAt: user.createdAt
     };
-
-    res.json({
-      success: true,
-      data: profileData
-    });
-
+    res.json({ success: true, data: profileData });
   } catch (error) {
     console.error('Error fetching driver profile:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to fetch driver profile',
-      error: error.message
-    });
+    res.status(500).json({ success: false, message: 'Failed to fetch driver profile', error: error.message });
   }
 };
 
 export const updateOnlineStatus = async (req, res) => {
   try {
-    const riderId = req.user.id;
+    const userId = req.user.id;
     const { isOnline } = req.body;
-
     if (typeof isOnline !== 'boolean') {
-      return res.status(400).json({
-        success: false,
-        message: 'isOnline must be a boolean value'
-      });
+      return res.status(400).json({ success: false, message: 'isOnline must be a boolean value' });
     }
-
-    const updatedRider = await User.findByIdAndUpdate(
-      riderId,
+    const driver = await Driver.findOneAndUpdate(
+      { user: userId },
       { isOnline },
-      { new: true, select: 'isOnline name' }
+      { new: true, select: 'isOnline' }
     );
-
-    if (!updatedRider) {
-      return res.status(404).json({
-        success: false,
-        message: 'Driver not found'
-      });
+    if (!driver) {
+      return res.status(404).json({ success: false, message: 'Driver not found' });
     }
-
     if (req.io) {
-      req.io.emit('driverStatusUpdate', {
-        riderId,
-        isOnline: updatedRider.isOnline,
-        name: updatedRider.name
-      });
+      req.io.emit('driverStatusUpdate', { userId, isOnline: driver.isOnline });
     }
-
-    res.json({
-      success: true,
-      message: `Driver is now ${isOnline ? 'online' : 'offline'}`,
-      data: {
-        isOnline: updatedRider.isOnline
-      }
-    });
-
+    res.json({ success: true, message: `Driver is now ${isOnline ? 'online' : 'offline'}`, data: { isOnline: driver.isOnline } });
   } catch (error) {
     console.error('Error updating online status:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to update online status',
-      error: error.message
-    });
+    res.status(500).json({ success: false, message: 'Failed to update online status', error: error.message });
   }
 };
 
 export const updateVehicleInfo = async (req, res) => {
   try {
-    const riderId = req.user.id;
-    const { type, plateNumber, model, licenseNumber, certificationLevel } = req.body;
-
-    // Validate ambulance type
-    const validTypes = ["basicAmbulance", "advancedAmbulance", "icuAmbulance", "airAmbulance"];
+    const userId = req.user.id;
+    const { type, plateNumber, model, licenseNumber, certificationLevel, specializations } = req.body;
+    // Use Driver model enums
+    const validTypes = ["bls", "als", "ccs", "auto", "bike"];
     if (type && !validTypes.includes(type)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid ambulance type. Valid types: basicAmbulance, advancedAmbulance, icuAmbulance, airAmbulance'
-      });
+      return res.status(400).json({ success: false, message: 'Invalid ambulance type. Valid types: bls, als, ccs, auto, bike' });
     }
-
-    // Validate certification level
     const validCertifications = ["EMT-Basic", "EMT-Intermediate", "EMT-Paramedic", "Critical Care"];
     if (certificationLevel && !validCertifications.includes(certificationLevel)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid certification level. Valid levels: EMT-Basic, EMT-Intermediate, EMT-Paramedic, Critical Care'
-      });
+      return res.status(400).json({ success: false, message: 'Invalid certification level. Valid levels: EMT-Basic, EMT-Intermediate, EMT-Paramedic, Critical Care' });
     }
-
     const updateData = {};
     if (type) updateData['vehicle.type'] = type;
     if (plateNumber) updateData['vehicle.plateNumber'] = plateNumber;
     if (model) updateData['vehicle.model'] = model;
     if (licenseNumber) updateData['vehicle.licenseNumber'] = licenseNumber;
     if (certificationLevel) updateData['vehicle.certificationLevel'] = certificationLevel;
-
-    const updatedRider = await User.findByIdAndUpdate(
-      riderId,
-      updateData,
+    if (specializations) updateData['vehicle.specializations'] = specializations;
+    const updatedDriver = await Driver.findOneAndUpdate(
+      { user: userId },
+      { $set: updateData },
       { new: true, select: 'vehicle' }
     );
-
-    if (!updatedRider) {
-      return res.status(404).json({
-        success: false,
-        message: 'Driver not found'
-      });
+    if (!updatedDriver) {
+      return res.status(404).json({ success: false, message: 'Driver not found' });
     }
-
-    res.json({
-      success: true,
-      message: 'Ambulance information updated successfully',
-      data: {
-        vehicle: updatedRider.vehicle
-      }
-    });
-
+    res.json({ success: true, message: 'Ambulance information updated successfully', data: { vehicle: updatedDriver.vehicle } });
   } catch (error) {
     console.error('Error updating ambulance information:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to update ambulance information',
-      error: error.message
-    });
+    res.status(500).json({ success: false, message: 'Failed to update ambulance information', error: error.message });
   }
 };
 

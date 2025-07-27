@@ -1,13 +1,14 @@
 import express from 'express';
 import auth from '../middleware/authentication.js';
+import requireRole from '../middleware/requireRole.js';
 import { getDriverStats, getDriverProfile, updateOnlineStatus, updateVehicleInfo, getRideHistory } from '../controllers/driver.js';
 
 const router = express.Router();
 
-router.get('/stats', auth, getDriverStats);
-router.get('/profile', auth, getDriverProfile);
-router.put('/online-status', auth, updateOnlineStatus);
-router.put('/vehicle', auth, updateVehicleInfo);
-router.get('/rides', auth, getRideHistory);
+router.get('/stats', auth, requireRole('driver'), getDriverStats);
+router.get('/profile', auth, requireRole('driver'), getDriverProfile);
+router.put('/online-status', auth, requireRole('driver'), updateOnlineStatus);
+router.put('/vehicle', auth, requireRole('driver'), updateVehicleInfo);
+router.get('/rides', auth, requireRole('driver'), getRideHistory);
 
 export default router;

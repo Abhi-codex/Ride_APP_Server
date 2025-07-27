@@ -11,8 +11,8 @@ export const auth = async (req, res) => {
     throw new BadRequestError("Phone number is required");
   }
 
-  if (!role || !["patient", "driver"].includes(role)) {
-    throw new BadRequestError("Valid role is required (patient or driver)");
+  if (!role || !["patient", "driver", "doctor"].includes(role)) {
+    throw new BadRequestError("Valid role is required (patient, driver, or doctor)");
   }
 
   try {
@@ -38,8 +38,20 @@ export const auth = async (req, res) => {
       phone,
       role,
     });
-
     await user.save();
+
+
+    // Create role-specific profile
+    if (role === "doctor") {
+      const Doctor = (await import("../models/Doctor.js")).default;
+      await Doctor.create({ user: user._id, specialties: [], bio: "", availableSlots: [] });
+    } else if (role === "patient") {
+      const Patient = (await import("../models/Patient.js")).default;
+      await Patient.create({ user: user._id });
+    } else if (role === "driver") {
+      const Driver = (await import("../models/Driver.js")).default;
+      await Driver.create({ user: user._id });
+    }
 
     const accessToken = user.createAccessToken();
     const refreshToken = user.createRefreshToken();
