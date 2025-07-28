@@ -1,6 +1,8 @@
 import express from "express";
 import auth from "../middleware/authentication.js";
-import { getMessages, sendMessage, deleteMessage, getUnreadCount, markMessagesRead } from "../controllers/message.js";
+import { getMessages, sendMessage, deleteMessage, getUnreadCount, markMessagesRead, getChatList } from "../controllers/message.js";
+// List all chat partners/chats for the current user
+router.get("/chats", auth, getChatList);
 
 const router = express.Router();
 

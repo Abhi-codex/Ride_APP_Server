@@ -116,3 +116,54 @@ export const markMessagesRead = async (req, res) => {
     res.status(500).json({ success: false, message: "Failed to mark messages as read" });
   }
 };
+
+// List all chat partners (doctor/patient) for the current user, grouped by appointment or user
+export const getChatList = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    // Find all messages where user is sender or receiver
+    const messages = await Message.find({
+      $or: [ { sender: userId }, { receiver: userId } ]
+    }).sort({ timestamp: -1 }).lean();
+
+    // Group by appointment or user
+    const chatMap = new Map();
+    for (const msg of messages) {
+      // Key: appointmentId if present, else user pair
+      let key;
+      if (msg.appointment) {
+        key = `appointment:${msg.appointment}`;
+      } else {
+        const otherUser = String(msg.sender) === String(userId) ? msg.receiver : msg.sender;
+        key = `user:${otherUser}`;
+      }
+      if (!chatMap.has(key)) {
+        chatMap.set(key, {
+          lastMessage: msg,
+          unreadCount: 0,
+          appointment: msg.appointment || null,
+          otherUser: (String(msg.sender) === String(userId) ? msg.receiver : msg.sender)
+        });
+      }
+      // Count unread messages for this chat
+      if (!msg.read && String(msg.receiver) === String(userId)) {
+        chatMap.get(key).unreadCount++;
+      }
+    }
+    // Populate user info for chat partners
+    const userIdsToPopulate = Array.from(chatMap.values())
+      .map(c => c.otherUser)
+      .filter(Boolean);
+    const users = await Message.db.model('User').find({ _id: { $in: userIdsToPopulate } }).select('name role email phone').lean();
+    const userMap = new Map(users.map(u => [String(u._id), u]));
+
+    const chatList = Array.from(chatMap.values()).map(chat => ({
+      ...chat,
+      otherUserInfo: userMap.get(String(chat.otherUser)) || null
+    }));
+    res.json({ success: true, data: chatList });
+  } catch (err) {
+    console.error("Error fetching chat list:", err);
+    res.status(500).json({ success: false, message: "Failed to fetch chat list" });
+  }
+};
