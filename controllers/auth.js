@@ -242,3 +242,63 @@ export const getProfile = async (req, res) => {
     throw error;
   }
 };
+
+// In-memory OTP store for dev/testing
+const otpStore = new Map(); // key: mobile, value: { otp, expiresAt }
+
+// Send OTP (console)
+export const sendOtp = async (req, res) => {
+  const { mobile } = req.body;
+  if (!mobile) return res.status(StatusCodes.BAD_REQUEST).json({ success: false, message: "Mobile number required" });
+  // Generate 6-digit OTP
+  const otp = (Math.floor(100000 + Math.random() * 900000)).toString();
+  const expiresAt = Date.now() + 5 * 60 * 1000; // 5 minutes
+  otpStore.set(mobile, { otp, expiresAt });
+  console.log(`OTP for ${mobile}: ${otp}`);
+  res.json({ success: true, message: "OTP sent (check console in dev mode)" });
+};
+
+// Verify OTP
+export const verifyOtp = async (req, res) => {
+  const { mobile, otp } = req.body;
+  if (!mobile || !otp) return res.status(StatusCodes.BAD_REQUEST).json({ success: false, message: "Mobile and OTP required" });
+  const record = otpStore.get(mobile);
+  if (!record) return res.status(StatusCodes.BAD_REQUEST).json({ success: false, message: "No OTP sent for this number" });
+  if (Date.now() > record.expiresAt) {
+    otpStore.delete(mobile);
+    return res.status(StatusCodes.BAD_REQUEST).json({ success: false, message: "OTP expired" });
+  }
+  if (record.otp !== otp) return res.status(StatusCodes.UNAUTHORIZED).json({ success: false, message: "Invalid OTP" });
+  otpStore.delete(mobile);
+  // Find or create user
+  let user = await User.findOne({ mobile });
+  if (!user) {
+    user = await User.create({ mobile, role: "doctor" });
+  }
+  // Generate JWT tokens
+  const accessToken = user.createAccessToken();
+  const refreshToken = user.createRefreshToken();
+  res.json({
+    success: true,
+    message: "OTP verified",
+    user,
+    access_token: accessToken,
+    refresh_token: refreshToken
+  });
+};
+
+// JWT authentication middleware
+export const authenticateJWT = (req, res, next) => {
+  const authHeader = req.headers["authorization"];
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    return res.status(StatusCodes.UNAUTHORIZED).json({ success: false, message: "No token provided" });
+  }
+  const token = authHeader.split(" ")[1];
+  try {
+    const payload = jwt.verify(token, process.env.ACCESS_TOKEN_SECRET);
+    req.user = { id: payload.id, role: payload.role };
+    next();
+  } catch (err) {
+    return res.status(StatusCodes.UNAUTHORIZED).json({ success: false, message: "Invalid or expired token" });
+  }
+};

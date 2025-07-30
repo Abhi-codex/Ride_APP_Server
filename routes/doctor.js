@@ -1,15 +1,15 @@
 import express from 'express';
-import authMiddleware from '../middleware/authentication.js';
+import { authenticateJWT } from '../controllers/auth.js';
 import requireRole from '../middleware/requireRole.js';
 import { getDoctorProfile, updateDoctorProfile, getAvailableSlots, setAvailableSlots, getDoctorAppointments } from '../controllers/doctor.js';
 
 const router = express.Router();
 
-// All routes require authentication and doctor role (add doctor role check in middleware or controller)
-router.get('/profile', authMiddleware, requireRole('doctor'), getDoctorProfile);
-router.put('/profile', authMiddleware, requireRole('doctor'), updateDoctorProfile);
-router.get('/slots', authMiddleware, requireRole('doctor'), getAvailableSlots);
-router.put('/slots', authMiddleware, requireRole('doctor'), setAvailableSlots);
-router.get('/appointments', authMiddleware, requireRole('doctor'), getDoctorAppointments);
+// All routes require JWT authentication and doctor role
+router.get('/profile', authenticateJWT, requireRole('doctor'), getDoctorProfile);
+router.put('/profile', authenticateJWT, requireRole('doctor'), updateDoctorProfile);
+router.get('/slots', authenticateJWT, requireRole('doctor'), getAvailableSlots);
+router.put('/slots', authenticateJWT, requireRole('doctor'), setAvailableSlots);
+router.get('/appointments', authenticateJWT, requireRole('doctor'), getDoctorAppointments);
 
 export default router;
