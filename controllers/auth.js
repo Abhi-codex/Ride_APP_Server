@@ -248,32 +248,78 @@ const otpStore = new Map(); // key: mobile, value: { otp, expiresAt }
 
 // Send OTP (console)
 export const sendOtp = async (req, res) => {
-  const { mobile } = req.body;
-  if (!mobile) return res.status(StatusCodes.BAD_REQUEST).json({ success: false, message: "Mobile number required" });
+  const { phone } = req.body;
+  if (!phone) return res.status(StatusCodes.BAD_REQUEST).json({ success: false, message: "Phone number required" });
   // Generate 6-digit OTP
   const otp = (Math.floor(100000 + Math.random() * 900000)).toString();
   const expiresAt = Date.now() + 5 * 60 * 1000; // 5 minutes
-  otpStore.set(mobile, { otp, expiresAt });
-  console.log(`OTP for ${mobile}: ${otp}`);
-  res.json({ success: true, message: "OTP sent (check console in dev mode)" });
+  otpStore.set(phone, { otp, expiresAt });
+  console.log(`OTP for ${phone}: ${otp}`);
+  // For testing, send OTP in response
+  res.json({ success: true, message: "OTP sent (for testing)", otp });
 };
 
 // Verify OTP
 export const verifyOtp = async (req, res) => {
-  const { mobile, otp } = req.body;
-  if (!mobile || !otp) return res.status(StatusCodes.BAD_REQUEST).json({ success: false, message: "Mobile and OTP required" });
-  const record = otpStore.get(mobile);
+  const { phone, otp } = req.body;
+  if (!phone || !otp) return res.status(StatusCodes.BAD_REQUEST).json({ success: false, message: "Phone and OTP required" });
+  const record = otpStore.get(phone);
   if (!record) return res.status(StatusCodes.BAD_REQUEST).json({ success: false, message: "No OTP sent for this number" });
   if (Date.now() > record.expiresAt) {
-    otpStore.delete(mobile);
+    otpStore.delete(phone);
     return res.status(StatusCodes.BAD_REQUEST).json({ success: false, message: "OTP expired" });
   }
   if (record.otp !== otp) return res.status(StatusCodes.UNAUTHORIZED).json({ success: false, message: "Invalid OTP" });
-  otpStore.delete(mobile);
+  otpStore.delete(phone);
   // Find or create user
-  let user = await User.findOne({ mobile });
+  let user = await User.findOne({ phone });
+  const Doctor = (await import("../models/Doctor.js")).default;
   if (!user) {
-    user = await User.create({ mobile, role: "doctor" });
+    user = await User.create({ phone, role: "doctor" });
+    // Create doctor profile for new doctor user
+    try {
+      await Doctor.create({
+        user: user._id,
+        name: user.name || "",
+        email: user.email || "",
+        phone: user.phone,
+        specialties: [],
+        bio: "",
+        qualifications: "",
+        experience: "",
+        clinicAddress: "",
+        availableSlots: []
+      });
+      console.log(`Doctor profile created for new user ${user.phone}`);
+    } catch (err) {
+      console.error(`Failed to create doctor profile for new user ${user.phone}:`, err);
+    }
+  } else {
+    // If user exists, ensure doctor profile exists
+    if (user.role === "doctor") {
+      try {
+        const doctorProfile = await Doctor.findOne({ user: user._id });
+        if (!doctorProfile) {
+          await Doctor.create({
+            user: user._id,
+            name: user.name || "",
+            email: user.email || "",
+            phone: user.phone,
+            specialties: [],
+            bio: "",
+            qualifications: "",
+            experience: "",
+            clinicAddress: "",
+            availableSlots: []
+          });
+          console.log(`Doctor profile created for existing user ${user.phone}`);
+        } else {
+          console.log(`Doctor profile already exists for user ${user.phone}`);
+        }
+      } catch (err) {
+        console.error(`Failed to create doctor profile for existing user ${user.phone}:`, err);
+      }
+    }
   }
   // Generate JWT tokens
   const accessToken = user.createAccessToken();

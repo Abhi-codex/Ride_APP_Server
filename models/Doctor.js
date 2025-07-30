@@ -2,8 +2,14 @@ import mongoose from "mongoose";
 
 const DoctorSchema = new mongoose.Schema({
   user: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true, unique: true },
+  name: { type: String },
+  email: { type: String },
+  phone: { type: String }, // Used for login/OTP, not editable in profile
   specialties: [{ type: String, required: true }], // e.g., ["cardiology", "pediatrics"]
   bio: { type: String },
+  qualifications: { type: String },
+  experience: { type: String },
+  clinicAddress: { type: String },
   availableSlots: [
     {
       date: { type: String, required: true }, // ISO date string (YYYY-MM-DD)

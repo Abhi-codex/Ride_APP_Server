@@ -17,6 +17,7 @@ import rideRouter from './routes/ride.js';
 import driverRouter from './routes/driver.js';
 import hospitalRouter from './routes/hospital.js';
 import messageRouter from './routes/message.js';
+import doctorRouter from './routes/doctor.js';
 
 import handleSocketConnection from './controllers/sockets.js';
 
@@ -90,9 +91,10 @@ app.get('/db-status', (req, res) => {
 
 // Routes
 app.use("/auth", authRouter);
-app.use("/ride", authMiddleware, rideRouter);
-app.use("/driver", authMiddleware, driverRouter);
+app.use("/ride", rideRouter);
+app.use("/driver", driverRouter);
 app.use("/hospitals", hospitalRouter);
+app.use("/doctor", doctorRouter);
 
 // Middleware
 app.use(notFoundMiddleware);

@@ -11,14 +11,34 @@ export const getDoctorProfile = async (req, res) => {
   res.status(StatusCodes.OK).json({ doctor });
 };
 
-// Update doctor profile (bio, specialties)
 export const updateDoctorProfile = async (req, res) => {
   const userId = req.user.id;
-  const { bio, specialties } = req.body;
+  // Accept all updatable fields from Doctor model except phone and user
+  const {
+    name,
+    email,
+    specialties,
+    bio,
+    qualifications,
+    experience,
+    clinicAddress,
+    availableSlots
+  } = req.body;
+  console.log(`[DoctorProfileUpdate] Searching for doctor profile with userId: ${userId}`);
   const doctor = await Doctor.findOne({ user: userId });
-  if (!doctor) throw new BadRequestError("Doctor profile not found");
-  if (bio !== undefined) doctor.bio = bio;
-  if (specialties !== undefined) doctor.specialties = specialties;
+  if (!doctor) {
+    console.error(`[DoctorProfileUpdate] Doctor profile not found for userId: ${userId}`);
+    throw new BadRequestError("Doctor profile not found");
+  }
+  console.log(`[DoctorProfileUpdate] Doctor profile found:`, doctor);
+  if (typeof name === "string") doctor.name = name;
+  if (typeof email === "string") doctor.email = email;
+  if (Array.isArray(specialties)) doctor.specialties = specialties;
+  if (typeof bio === "string") doctor.bio = bio;
+  if (typeof qualifications === "string") doctor.qualifications = qualifications;
+  if (typeof experience === "string") doctor.experience = experience;
+  if (typeof clinicAddress === "string") doctor.clinicAddress = clinicAddress;
+  if (Array.isArray(availableSlots)) doctor.availableSlots = availableSlots;
   doctor.updatedAt = new Date();
   await doctor.save();
   res.status(StatusCodes.OK).json({ message: "Doctor profile updated", doctor });
