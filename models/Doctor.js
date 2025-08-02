@@ -23,6 +23,13 @@ const DoctorSchema = new mongoose.Schema({
       ]
     }
   ],
+  holidays: [
+    {
+      date: { type: String, required: true }, // ISO date string (YYYY-MM-DD)
+      reason: { type: String, required: true }, // e.g., "Vacation", "Conference", "Personal"
+      isRecurring: { type: Boolean, default: false } // for annual holidays
+    }
+  ],
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now }
 });

@@ -9,21 +9,21 @@
     - `POST /auth/verify-otp` (verify OTP)
 
 ## 2. Doctor Profile Form
-- [ ] After registration, show profile form
+- [ ✔️ ] After registration, show profile form
     - Fields: Name, Email, Mobile, Specialties (cardiac, trauma, respiratory, neurological, pediatric, obstetric, psychiatric, burns, poisoning, general), Bio, Qualifications, Experience, Clinic Address, etc.
     - Validate and save profile details
     - Use fields as described in appointment docs
-- [ ] API: `PUT /doctors/profile` (edit profile)
-- [ ] Doctors can edit profile after registration
+- [ ✔️ ] API: `PUT /doctors/profile` (edit profile)
+- [ ✔️ ] Doctors can edit profile after registration
 
 ## 3. Weekly Availability (Calendar)
-- [ ] Tab: Calendar/Availability
-- [ ] UI to set/edit weekly slots (date, start, end)
-- [ ] API: `PUT /doctors/slots` (send array of slots)
-- [ ] Show existing slots (GET `/doctors/:id`)
-- [ ] Set recurring availability/holidays
-- [ ] Block out holidays/unavailable dates (API: `PUT /doctors/holidays`, `GET /doctors/holidays`)
-- [ ] Ensure blocked dates reflect for patients
+- [ ✔️ ] Tab: Calendar/Availability
+- [ ✔️ ] UI to set/edit weekly slots (date, start, end)
+- [ ✔️ ] API: `PUT /doctors/slots` (send array of slots)
+- [ ✔️ ] Show existing slots (GET `/doctors/slots`)
+- [ ✔️ ] Set recurring availability/holidays
+- [ ✔️ ] Block out holidays/unavailable dates (API: `PUT /doctors/holidays`, `GET /doctors/holidays`)
+- [ ✔️ ] Ensure blocked dates reflect for patients (API: `GET /doctors/:id/availability`)
 
 ## 4. View Upcoming Appointments
 - [ ] Tab: Appointments
