@@ -32,24 +32,32 @@ export const getHospitalDetails = async (req, res) => {
     if (!process.env.GOOGLE_PLACES_API_KEY) {
       throw new BadRequestError("Google Places API not configured");
     }
-    const detailsUrl = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${placeId}&fields=name,geometry,formatted_address,international_phone_number,website,rating,opening_hours,photos,types&key=${process.env.GOOGLE_PLACES_API_KEY}`;
+    const detailsUrl = `https://places.googleapis.com/v1/places/${placeId}`;
     const fetch = (await import('node-fetch')).default;
-    const response = await fetch(detailsUrl, { agent: httpsAgent });
+    const response = await fetch(detailsUrl, {
+      method: 'GET',
+      headers: {
+        'X-Goog-Api-Key': process.env.GOOGLE_PLACES_API_KEY,
+        'X-Goog-FieldMask': 'id,displayName,location,formattedAddress,internationalPhoneNumber,websiteUri,rating,currentOpeningHours,photos,types'
+      },
+      agent: httpsAgent
+    });
     const data = await response.json();
-    if (!data.result) {
+    if (!data.id) {
       return res.status(404).json({ error: "Hospital not found in Google Places" });
     }
     // Fetch from local DB
     const dbHospital = await Hospital.findOne({ placeId });
-    const result = data.result;
+    const result = data; // New Places API returns data directly, not in a 'result' wrapper
+    
     // Format photos
     let photos = [];
     if (result.photos && Array.isArray(result.photos)) {
       photos = result.photos.slice(0, 5).map(photo => ({
-        photoReference: photo.photo_reference,
-        width: photo.width,
-        height: photo.height,
-        attributions: photo.html_attributions || []
+        photoReference: photo.name,
+        width: photo.widthPx,
+        height: photo.heightPx,
+        attributions: photo.authorAttributions?.map(attr => attr.displayName) || []
       }));
     }
     // Emergency capability score (simple example)
@@ -62,7 +70,7 @@ export const getHospitalDetails = async (req, res) => {
       emergencyCapabilityScore += 20;
       emergencyFeatures.push('Hospital facility');
     }
-    if (result.name && /emergency|trauma|critical|ICU|intensive/i.test(result.name)) {
+    if (result.displayName && /emergency|trauma|critical|ICU|intensive/i.test(result.displayName.text)) {
       emergencyCapabilityScore += 25;
       emergencyFeatures.push('Emergency facility');
       isEmergencyVerified = true;
@@ -71,7 +79,7 @@ export const getHospitalDetails = async (req, res) => {
       emergencyCapabilityScore += 10;
       emergencyFeatures.push('High patient rating (4.0+)');
     }
-    if (result.opening_hours && result.opening_hours.open_now) {
+    if (result.currentOpeningHours && result.currentOpeningHours.openNow) {
       emergencyCapabilityScore += 10;
       emergencyFeatures.push('Currently open/24-7 operations');
     }
@@ -86,15 +94,15 @@ export const getHospitalDetails = async (req, res) => {
     // Format response
     const hospitalDetails = {
       placeId,
-      name: result.name || dbHospital?.name,
-      address: result.formatted_address || dbHospital?.address,
-      latitude: result.geometry?.location?.lat || dbHospital?.location?.latitude,
-      longitude: result.geometry?.location?.lng || dbHospital?.location?.longitude,
+      name: result.displayName?.text || dbHospital?.name,
+      address: result.formattedAddress || dbHospital?.address,
+      latitude: result.location?.latitude || dbHospital?.location?.latitude,
+      longitude: result.location?.longitude || dbHospital?.location?.longitude,
       rating: result.rating || dbHospital?.rating,
-      phoneNumber: result.international_phone_number || dbHospital?.phoneNumber,
-      website: result.website || null,
-      openingHours: result.opening_hours?.weekday_text || [],
-      isOpen: result.opening_hours?.open_now || false,
+      phoneNumber: result.internationalPhoneNumber || dbHospital?.phoneNumber,
+      website: result.websiteUri || null,
+      openingHours: result.currentOpeningHours?.weekdayDescriptions || [],
+      isOpen: result.currentOpeningHours?.openNow || false,
       photos,
       emergencyCapabilityScore,
       emergencyFeatures,
@@ -281,50 +289,77 @@ export const searchHospitals = async (req, res) => {
     throw new BadRequestError("Google Places API not configured");
   }
   try {
-    const searchQueries = [
-      `https://maps.googleapis.com/maps/api/place/nearbysearch/json?` +
-      `location=${lat},${lng}&radius=${radius}&type=hospital&keyword=emergency&` +
-      `key=${process.env.GOOGLE_PLACES_API_KEY}`,
-      `https://maps.googleapis.com/maps/api/place/nearbysearch/json?` +
-      `location=${lat},${lng}&radius=${radius}&type=hospital&keyword=emergency+room&` +
-      `key=${process.env.GOOGLE_PLACES_API_KEY}`,
-      `https://maps.googleapis.com/maps/api/place/nearbysearch/json?` +
-      `location=${lat},${lng}&radius=${radius}&type=hospital&keyword=trauma+center&` +
-      `key=${process.env.GOOGLE_PLACES_API_KEY}`
+    console.log('🔍 Starting hospital search with params:', { lat, lng, emergency, radius: `${radius}m (${parseFloat(radius)/1000}km)` });
+    console.log('🗝️ New Places API Key present:', !!process.env.GOOGLE_PLACES_API_KEY);
+    
+    // New Places API - Text Search requests
+    const searchQueries = [];
+    
+    // Base hospital search queries
+    const baseQueries = [
+      'hospital emergency near me',
+      'emergency room hospital',
+      'trauma center hospital'
     ];
-
+    
+    // Add emergency-specific queries
     if (emergency) {
       const keywords = EMERGENCY_SEARCH_KEYWORDS[emergency] || ['emergency'];
       keywords.forEach(keyword => {
-        searchQueries.push(
-          `https://maps.googleapis.com/maps/api/place/nearbysearch/json?` +
-          `location=${lat},${lng}&radius=${radius}&type=hospital&keyword=${keyword}&` +
-          `key=${process.env.GOOGLE_PLACES_API_KEY}`
-        );
+        baseQueries.push(`${keyword} hospital near me`);
       });
     }
+    
+    // Create request bodies for new Places API
+    baseQueries.forEach(query => {
+      searchQueries.push({
+        url: 'https://places.googleapis.com/v1/places:searchText',
+        body: {
+          textQuery: query,
+          locationBias: {
+            circle: {
+              center: {
+                latitude: parseFloat(lat),
+                longitude: parseFloat(lng)
+              },
+              radius: parseFloat(radius)
+            }
+          },
+          maxResultCount: 20
+        }
+      });
+    });
 
     let hospitals = [];
     let apiError = false;
     try {
+      console.log('📡 Making requests to New Places API with', searchQueries.length, 'queries...');
       const responses = await Promise.all(
-        searchQueries.map(async (url) => {
+        searchQueries.map(async (queryData) => {
           try {
-            const response = await fetch(url, {
-              method: 'GET',
+            const fetch = (await import('node-fetch')).default;
+            const response = await fetch(queryData.url, {
+              method: 'POST',
               headers: {
-                'User-Agent': 'Ambulance-Booking-System/1.0'
+                'Content-Type': 'application/json',
+                'X-Goog-Api-Key': process.env.GOOGLE_PLACES_API_KEY,
+                'X-Goog-FieldMask': 'places.id,places.displayName,places.location,places.rating,places.formattedAddress,places.types,places.businessStatus,places.currentOpeningHours,places.photos'
               },
+              body: JSON.stringify(queryData.body),
               agent: httpsAgent
             });
+            
             if (!response.ok) {
-              throw new Error(`Google Places API request failed with status: ${response.status}`);
+              const errorText = await response.text();
+              console.error(`❌ New Places API Error (${response.status}):`, errorText);
+              throw new Error(`New Places API request failed with status: ${response.status}`);
             }
             return response;
-          } catch {
+          } catch (error) {
+            console.error('❌ API request failed:', error.message);
             return {
               ok: true,
-              json: async () => ({ status: 'ZERO_RESULTS', results: [] })
+              json: async () => ({ places: [] })
             };
           }
         })
@@ -334,24 +369,55 @@ export const searchHospitals = async (req, res) => {
         responses.map(async (response) => {
           try {
             const data = await response.json();
+            console.log('📊 New Places API Response - Places found:', data.places?.length || 0);
+            if (data.error) {
+              console.log('❌ API Error:', data.error.message);
+            }
             return data;
-          } catch {
-            return { status: 'ZERO_RESULTS', results: [] };
+          } catch (error) {
+            console.error('❌ Error parsing response:', error.message);
+            return { places: [] };
           }
         })
       );
 
       const allPlaces = new Map();
       allData.forEach(data => {
-        if (data.status === 'OK' && data.results) {
-          data.results.forEach(place => {
-            if (isEmergencyCapableHospital(place)) {
-              allPlaces.set(place.place_id, place);
+        if (data.places && Array.isArray(data.places)) {
+          data.places.forEach(place => {
+            // Convert new Places API format to match our existing logic
+            const convertedPlace = {
+              place_id: place.id,
+              name: place.displayName?.text || 'Unknown Hospital',
+              geometry: {
+                location: {
+                  lat: place.location?.latitude,
+                  lng: place.location?.longitude
+                }
+              },
+              rating: place.rating,
+              formatted_address: place.formattedAddress,
+              vicinity: place.formattedAddress,
+              types: place.types || ['hospital'],
+              opening_hours: place.currentOpeningHours ? {
+                open_now: place.currentOpeningHours.openNow
+              } : undefined,
+              photos: place.photos ? place.photos.map(photo => ({
+                photo_reference: photo.name,
+                width: photo.widthPx,
+                height: photo.heightPx
+              })) : undefined
+            };
+            
+            if (isEmergencyCapableHospital(convertedPlace)) {
+              allPlaces.set(place.id, convertedPlace);
             }
           });
         }
       });
 
+      const radiusKm = parseFloat(radius) / 1000; // Convert meters to kilometers
+      
       hospitals = await Promise.all(
         Array.from(allPlaces.values()).map(async (place) => {
           const distance = calculateDistance(
@@ -360,6 +426,12 @@ export const searchHospitals = async (req, res) => {
             place.geometry.location.lat,
             place.geometry.location.lng
           );
+          
+          // Filter out hospitals that are outside the specified radius
+          if (distance > radiusKm) {
+            return null; // Will be filtered out later
+          }
+          
           const emergencyCapability = assessEmergencyCapability(place, emergency);
 
           let photos = place.photos ? place.photos.slice(0, 1).map(photo => ({
@@ -370,29 +442,32 @@ export const searchHospitals = async (req, res) => {
 
           if (photos.length === 0 && (emergencyCapability.isVerified || place.rating >= 4.0)) {
             try {
+              // For new Places API, photos are already included in the main response
+              // If we need more photos, we would use Place Details (New)
+              const fetch = (await import('node-fetch')).default;
               const detailsResponse = await fetch(
-                `https://maps.googleapis.com/maps/api/place/details/json?` +
-                `place_id=${place.place_id}&fields=photos&` +
-                `key=${process.env.GOOGLE_PLACES_API_KEY}`,
+                `https://places.googleapis.com/v1/places/${place.place_id}`,
                 {
                   method: 'GET',
                   headers: {
-                    'User-Agent': 'Ambulance-Booking-System/1.0'
+                    'X-Goog-Api-Key': process.env.GOOGLE_PLACES_API_KEY,
+                    'X-Goog-FieldMask': 'photos'
                   },
                   agent: httpsAgent
                 }
               );
               if (detailsResponse.ok) {
                 const detailsData = await detailsResponse.json();
-                if (detailsData.status === 'OK' && detailsData.result && detailsData.result.photos) {
-                  photos = detailsData.result.photos.slice(0, 1).map(photo => ({
-                    photoReference: photo.photo_reference,
-                    width: photo.width,
-                    height: photo.height
+                if (detailsData.photos && detailsData.photos.length > 0) {
+                  photos = detailsData.photos.slice(0, 1).map(photo => ({
+                    photoReference: photo.name,
+                    width: photo.widthPx,
+                    height: photo.heightPx
                   }));
                 }
               }
-            } catch {
+            } catch (error) {
+              console.error('❌ Error fetching additional photos:', error.message);
               // Silent fail for photo fetch
             }
           }
@@ -439,35 +514,57 @@ export const searchHospitals = async (req, res) => {
           };
         })
       );
+      
+      // Filter out null values (hospitals outside radius) and log the filtering
+      const initialCount = hospitals.length;
+      hospitals = hospitals.filter(hospital => hospital !== null);
+      console.log(`📍 Distance filtering: ${initialCount} found → ${hospitals.length} within ${radiusKm}km radius`);
+      
+      console.log('✅ New Places API successfully returned', hospitals.length, 'emergency-capable hospitals');
     } catch (apiErr) {
       apiError = true;
-      console.error("Google Maps API failed, falling back to DB:", apiErr.message);
+      console.error("❌ Google Maps API failed, falling back to DB:", apiErr.message);
+      console.error("❌ Full API error:", apiErr);
     }
 
     // If API failed or no hospitals found, fallback to DB
     if (apiError || hospitals.length === 0) {
+      console.log('🏥 Falling back to database. API Error:', apiError, 'Hospitals found from API:', hospitals.length);
       const dbHospitals = await Hospital.find({});
-      hospitals = dbHospitals.map(hospital => ({
-        placeId: hospital.placeId,
-        name: hospital.name,
-        latitude: hospital.location.latitude,
-        longitude: hospital.location.longitude,
-        rating: hospital.rating,
-        address: hospital.address,
-        emergencyServices: hospital.emergencyServices,
-        distance: lat && lng ? parseFloat(calculateDistance(
+      console.log('📊 Found', dbHospitals.length, 'hospitals in database');
+      
+      const radiusKm = parseFloat(radius) / 1000;
+      hospitals = dbHospitals.map(hospital => {
+        const distance = lat && lng ? parseFloat(calculateDistance(
           parseFloat(lat),
           parseFloat(lng),
           hospital.location.latitude,
           hospital.location.longitude
-        ).toFixed(2)) : null,
-        isOpen: null,
-        priceLevel: null,
-        photos: [],
-        emergencyCapabilityScore: null,
-        emergencyFeatures: [],
-        isEmergencyVerified: hospital.isVerified
-      }));
+        ).toFixed(2)) : null;
+        
+        return {
+          placeId: hospital.placeId,
+          name: hospital.name,
+          latitude: hospital.location.latitude,
+          longitude: hospital.location.longitude,
+          rating: hospital.rating,
+          address: hospital.address,
+          emergencyServices: hospital.emergencyServices,
+          distance: distance,
+          isOpen: null,
+          priceLevel: null,
+          photos: [],
+          emergencyCapabilityScore: null,
+          emergencyFeatures: [],
+          isEmergencyVerified: hospital.isVerified
+        };
+      }).filter(hospital => {
+        // Filter by radius (convert radius from meters to km)
+        const isWithinRadius = hospital.distance === null || hospital.distance <= radiusKm;
+        return isWithinRadius;
+      });
+      
+      console.log('📍 After distance filtering (', radiusKm, 'km):', hospitals.length, 'hospitals');
     }
 
     // sorting and filtering logic
@@ -668,8 +765,10 @@ export const getHospitalPhoto = async (req, res) => {
   }
   
   try {
-    const photoUrl = `https://maps.googleapis.com/maps/api/place/photo?maxwidth=${maxwidth}&maxheight=${maxheight}&photoreference=${photoReference}&key=${process.env.GOOGLE_PLACES_API_KEY}`;
+    // New Places API uses photo names instead of photo references
+    const photoUrl = `https://places.googleapis.com/v1/${photoReference}/media?maxWidthPx=${maxwidth}&maxHeightPx=${maxheight}&key=${process.env.GOOGLE_PLACES_API_KEY}`;
     
+    const fetch = (await import('node-fetch')).default;
     const response = await fetch(photoUrl, {
       method: 'GET',
       headers: {

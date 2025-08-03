@@ -1,4 +1,6 @@
 import express from "express";
+import auth from '../middleware/authentication.js';
+import requireRole from '../middleware/requireRole.js';
 import { createRide, updateRideStatus, acceptRide, getMyRides, getAvailableRides, rateRide } from "../controllers/ride.js";
 
 const router = express.Router();
@@ -8,11 +10,11 @@ router.use((req, res, next) => {
   next();
 });
 
-router.post("/create", createRide);
-router.patch("/accept/:rideId", acceptRide);
-router.patch("/update/:rideId", updateRideStatus);
-router.get("/rides", getMyRides);
-router.get("/driverrides", getAvailableRides);
-router.patch("/rate/:rideId", rateRide);
+router.post("/create", auth, createRide);
+router.patch("/accept/:rideId", auth, requireRole('driver'), acceptRide);
+router.patch("/update/:rideId", auth, updateRideStatus);
+router.get("/rides", auth, getMyRides);
+router.get("/driverrides", auth, requireRole('driver'), getAvailableRides);
+router.patch("/rate/:rideId", auth, rateRide);
 
 export default router;

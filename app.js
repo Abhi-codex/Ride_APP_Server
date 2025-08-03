@@ -9,7 +9,6 @@ import { Server as socketIo } from 'socket.io';
 import connectDB from './config/connect.js';
 import notFoundMiddleware from './middleware/not-found.js';
 import errorHandlerMiddleware from './middleware/error-handler.js';
-import authMiddleware from './middleware/authentication.js';
 import os from 'os';
 
 import authRouter from './routes/auth.js';
@@ -51,8 +50,12 @@ const server = http.createServer(app);
 
 const io = new socketIo(server, { cors: { origin: "*" } });
 
+console.log('DEBUG: Socket.IO instance created:', !!io);
+console.log('DEBUG: Socket.IO type:', typeof io);
+
 app.use((req, res, next) => {
   req.io = io;
+  console.log('DEBUG: Attaching io to req. io exists:', !!io, 'io.to exists:', !!(io && io.to));
   return next();
 });
 

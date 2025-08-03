@@ -170,8 +170,19 @@ export const acceptRide = async (req, res) => {
 
     ride = await ride.populate("rider");
 
-    req.socket.to(`ride_${rideId}`).emit("rideUpdate", ride);
-    req.socket.to(`ride_${rideId}`).emit("rideAccepted");
+    // Debug: Check what's available on req
+    console.log('DEBUG: req.io exists:', !!req.io);
+    console.log('DEBUG: req.io value:', req.io);
+    console.log('DEBUG: req.io type:', typeof req.io);
+    console.log('DEBUG: req.socket exists:', !!req.socket);
+    console.log('DEBUG: Available req properties:', Object.keys(req).filter(key => key.includes('io') || key.includes('socket')));
+
+    if (req.io && typeof req.io.to === 'function') {
+      req.io.to(`ride_${rideId}`).emit("rideUpdate", ride);
+      req.io.to(`ride_${rideId}`).emit("rideAccepted");
+    } else {
+      console.log('WARNING: req.io.to is not available, skipping socket events');
+    }
 
     res.status(StatusCodes.OK).json({
       message: "Emergency call accepted successfully",
@@ -205,7 +216,7 @@ export const updateRideStatus = async (req, res) => {
     ride.status = status;
     await ride.save();
 
-    req.socket.to(`ride_${rideId}`).emit("rideUpdate", ride);
+    req.io.to(`ride_${rideId}`).emit("rideUpdate", ride);
 
     res.status(StatusCodes.OK).json({
       message: `Emergency call status updated to ${status}`,
@@ -261,6 +272,17 @@ export const getMyRides = async (req, res) => {
 export const getAvailableRides = async (req, res) => {
   try {
     const { vehicle, emergency } = req.query;
+    
+    // Check if user is authenticated
+    if (!req.user || !req.user.id) {
+      throw new BadRequestError("User authentication required");
+    }
+    
+    // Check if user has proper role
+    if (!req.user.role) {
+      throw new BadRequestError("User role not found");
+    }
+    
     const driverId = req.user.id;
 
     // Build query for available rides
@@ -284,9 +306,9 @@ export const getAvailableRides = async (req, res) => {
     // Get driver information for filtering and scoring
     let driver = null;
     if (req.user.role === "driver") {
-      const driverProfile = await (await import("../models/Driver.js")).default.findOne({ user: driverId });
-      if (driverProfile && driverProfile.vehicle && driverProfile.vehicle.type) {
-        query.vehicle = driverProfile.vehicle.type;
+      driver = await (await import("../models/Driver.js")).default.findOne({ user: driverId });
+      if (driver && driver.vehicle && driver.vehicle.type) {
+        query.vehicle = driver.vehicle.type;
       }
     }
 

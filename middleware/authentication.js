@@ -21,6 +21,9 @@ const auth = async (req, res, next) => {
       throw new NotFoundError("User not found");
     }
 
+    // Add role to req.user for proper authorization
+    req.user.role = user.role;
+
     next();
   } catch (error) {
     console.error("Authentication error:", error);
