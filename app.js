@@ -12,6 +12,7 @@ import errorHandlerMiddleware from './middleware/error-handler.js';
 import os from 'os';
 
 import authRouter from './routes/auth.js';
+import firebaseAuthRouter from './routes/firebaseAuthentication.js';
 import rideRouter from './routes/ride.js';
 import driverRouter from './routes/driver.js';
 import hospitalRouter from './routes/hospital.js';
@@ -21,6 +22,11 @@ import doctorRouter from './routes/doctor.js';
 import handleSocketConnection from './controllers/sockets.js';
 
 dotenv.config();
+
+// Debug environment variables
+console.log('DEBUG: Environment variables loaded');
+console.log('DEBUG: FIREBASE_SERVICE_ACCOUNT_KEY exists:', !!process.env.FIREBASE_SERVICE_ACCOUNT_KEY);
+console.log('DEBUG: FIREBASE_PROJECT_ID exists:', !!process.env.FIREBASE_PROJECT_ID);
 
 EventEmitter.defaultMaxListeners = 20;
 
@@ -94,6 +100,7 @@ app.get('/db-status', (req, res) => {
 
 // Routes
 app.use("/auth", authRouter);
+app.use("/firebase", firebaseAuthRouter);
 app.use("/ride", rideRouter);
 app.use("/driver", driverRouter);
 app.use("/hospitals", hospitalRouter);
@@ -123,7 +130,8 @@ const start = async () => {
     console.log(`🚀 Service Server running on http://localhost:${PORT}`);
     console.log(`🌐 Network access: http://${localIp}:${PORT}`);
     console.log(`📍 Health check: http://${localIp}:${PORT}/health`);
-    console.log(`🔐 Auth endpoint: http://${localIp}:${PORT}/auth/signin`);
+    console.log(`🔐 Auth profiles: http://${localIp}:${PORT}/auth/*`);
+    console.log(`🔥 Firebase auth: http://${localIp}:${PORT}/firebase/*`);
     console.log(`🏥 Hospital search: http://${localIp}:${PORT}/hospitals/*`);
     console.log(`🚨 Emergency calls: http://${localIp}:${PORT}/ride/*`);
     console.log(`👨‍⚕️ Driver endpoints: http://${localIp}:${PORT}/driver/*`);

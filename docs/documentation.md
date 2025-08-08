@@ -140,14 +140,20 @@ The hospital search system now ensures only emergency-capable hospitals are retu
 
 ### Authentication Endpoints
 
-#### 1. Sign In / Register
-**POST** `/auth/signin`
+#### 1. Firebase Authentication (Primary)
+**POST** `/firebase/verify-firebase-token`
 
-Handles both registration and login for users.
+Primary authentication method using Firebase Auth with SMS OTP and OAuth support.
 
 **Request Body:**
 ```json
 {
+  "token": "firebase_jwt_token",
+  "role": "patient|driver|doctor",
+  "name": "User Name (optional)",
+  "vehicle": {}, // For drivers only
+  "hospitalAffiliation": {} // For drivers only
+}
   "phone": "+1234567890",
   "role": "patient"
 }
