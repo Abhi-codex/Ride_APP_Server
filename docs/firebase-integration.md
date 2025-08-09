@@ -70,10 +70,16 @@ Add these to your `.env` file:
 ```env
 # Firebase Configuration
 FIREBASE_PROJECT_ID=your-project-id
-FIREBASE_SERVICE_ACCOUNT_PATH=./path-to-service-account.json
-
-# Alternative: JSON string format
-FIREBASE_SERVICE_ACCOUNT_KEY={"type":"service_account","project_id":"..."}
+FIREBASE_TYPE=service_account
+FIREBASE_PRIVATE_KEY_ID=your_private_key_id_here
+FIREBASE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\nyour_private_key_content_here\n-----END PRIVATE KEY-----\n"
+FIREBASE_CLIENT_EMAIL=firebase-adminsdk-xxxxx@your-project-id.iam.gserviceaccount.com
+FIREBASE_CLIENT_ID=your_client_id_here
+FIREBASE_AUTH_URI=https://accounts.google.com/o/oauth2/auth
+FIREBASE_TOKEN_URI=https://oauth2.googleapis.com/token
+FIREBASE_AUTH_PROVIDER_X509_CERT_URL=https://www.googleapis.com/oauth2/v1/certs
+FIREBASE_CLIENT_X509_CERT_URL=https://www.googleapis.com/robot/v1/metadata/x509/firebase-adminsdk-xxxxx%40your-project-id.iam.gserviceaccount.com
+FIREBASE_UNIVERSE_DOMAIN=googleapis.com
 
 # Database Configuration
 MONGO_URI=mongodb://localhost:27017/ambulance_booking
