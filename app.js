@@ -16,6 +16,7 @@ import firebaseAuthRouter from './routes/firebaseAuthentication.js';
 import rideRouter from './routes/ride.js';
 import driverRouter from './routes/driver.js';
 import hospitalRouter from './routes/hospital.js';
+import hospitalDashboardRouter from './routes/hospitalDashboard.js';
 import messageRouter from './routes/message.js';
 import doctorRouter from './routes/doctor.js';
 
@@ -104,6 +105,7 @@ app.use("/firebase", firebaseAuthRouter);
 app.use("/ride", rideRouter);
 app.use("/driver", driverRouter);
 app.use("/hospitals", hospitalRouter);
+app.use("/hospital-dashboard", hospitalDashboardRouter);
 app.use("/doctor", doctorRouter);
 
 // Middleware

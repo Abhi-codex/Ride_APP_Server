@@ -9,7 +9,7 @@ const userSchema = new Schema(
     firebaseUid: { type: String, required: true, unique: true },
     
     // User basic info
-    role: { type: String, enum: ["patient", "driver", "doctor"], required: true },
+    role: { type: String, enum: ["patient", "driver", "doctor", "hospital_staff"], required: true },
     name: { type: String, default: null },
     email: { type: String, default: null },
     

@@ -22,6 +22,20 @@ const hospitalSchema = new Schema(
     operatingHours: { type: String, default: "24/7" },
     totalBeds: { type: Number, default: null },
     availableBeds: { type: Number, default: null },
+    bedDetails: {
+      icu: {
+        total: { type: Number, default: 0 },
+        available: { type: Number, default: 0 }
+      },
+      general: {
+        total: { type: Number, default: 0 },
+        available: { type: Number, default: 0 }
+      },
+      emergency: {
+        total: { type: Number, default: 0 },
+        available: { type: Number, default: 0 }
+      }
+    },
     lastUpdated: { type: Date, default: Date.now },
   },
   { timestamps: true }

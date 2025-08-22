@@ -31,6 +31,31 @@ const rideSchema = new Schema(
       name: { type: String, default: null },
       priority: { type: String, enum: ['low', 'medium', 'high', 'critical'], default: null },
     },
+    destinationHospital: {
+      hospitalId: { type: Schema.Types.ObjectId, ref: "Hospital", default: null },
+      hospitalName: { type: String, default: null },
+      estimatedArrival: { type: Date, default: null },
+      actualArrival: { type: Date, default: null }
+    },
+    liveTracking: {
+      currentLocation: {
+        latitude: { type: Number, default: null },
+        longitude: { type: Number, default: null }
+      },
+      lastUpdated: { type: Date, default: null },
+      driverLocation: {
+        latitude: { type: Number, default: null },
+        longitude: { type: Number, default: null }
+      }
+    },
+    contactInfo: {
+      patientRelative: {
+        name: { type: String, default: null },
+        phone: { type: String, default: null },
+        relationship: { type: String, default: null }
+      },
+      specialInstructions: { type: String, default: null }
+    },
   },
   { timestamps: true }
 );

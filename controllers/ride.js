@@ -97,7 +97,11 @@ export const createRide = async (req, res) => {
       customer: patient.id,
       emergency: emergency || null,
       otp: generateOTP(),
-      hospital: hospitalDetails ? hospitalDetails.placeId : null
+      destinationHospital: hospitalDetails ? {
+        hospitalId: hospitalDetails._id,
+        hospitalName: hospitalDetails.name,
+        estimatedArrival: null
+      } : null
     });
 
     await ride.save();
