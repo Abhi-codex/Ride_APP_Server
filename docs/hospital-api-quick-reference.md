@@ -105,7 +105,7 @@ curl -H "Authorization: Bearer YOUR_JWT_TOKEN" \
 
 2. **Auto-refresh Data:**
    ```js
-   setInterval(loadDashboardData, 30000); // 30 seconds
+   setInterval(loadDashboardData, 30000);
    ```
 
 3. **Handle Errors:**
