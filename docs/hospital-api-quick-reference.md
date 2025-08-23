@@ -79,22 +79,6 @@ curl -H "Authorization: Bearer YOUR_JWT_TOKEN" \
 }
 ```
 
-## ⚠️ Common Error Responses
-
-**401 Unauthorized:**
-```json
-{"error": "Access denied. No token provided"}
-```
-
-**400 Bad Request:**
-```json
-{"error": "Please provide email and password"}
-```
-
-**404 Not Found:**
-```json
-{"error": "Hospital not found"}
-```
 
 ## 🔧 Frontend Integration Tips
 
