@@ -2,12 +2,12 @@ import express from 'express';
 import User from '../models/User.js';
 import { StatusCodes } from "http-status-codes";
 import { BadRequestError } from "../errors/index.js";
-import { firebaseAdmin } from '../config/firebase.js';
+import { firebaseAdmin, getAppCheck, firebaseAppCheck } from '../config/firebase.js';
 
 const router = express.Router();
 
-// Firebase phone verification endpoint
-router.post('/verify-firebase-token', async (req, res) => {
+// Firebase phone verification endpoint with App Check
+router.post('/verify-firebase-token', firebaseAppCheck, async (req, res) => {
   try {
     console.log('🔥 Firebase token verification request received');
     
@@ -208,6 +208,42 @@ router.get('/firebase-user/:uid', async (req, res) => {
     res.status(StatusCodes.INTERNAL_SERVER_ERROR).json({
       success: false,
       message: error.message || "Failed to get Firebase user"
+    });
+  }
+});
+
+// App Check token verification endpoint for debugging
+router.post('/verify-app-check', async (req, res) => {
+  try {
+    const appCheckToken = req.header('X-Firebase-AppCheck');
+    
+    if (!appCheckToken) {
+      return res.status(400).json({
+        success: false,
+        error: 'App Check token is required in X-Firebase-AppCheck header'
+      });
+    }
+
+    // Verify the App Check token
+    const appCheckClaims = await getAppCheck().verifyToken(appCheckToken);
+    
+    res.status(StatusCodes.OK).json({
+      success: true,
+      message: 'App Check token verified successfully',
+      appId: appCheckClaims.appId,
+      audience: appCheckClaims.aud,
+      issuer: appCheckClaims.iss,
+      issuedAt: new Date(appCheckClaims.iat * 1000),
+      expiresAt: new Date(appCheckClaims.exp * 1000)
+    });
+
+  } catch (error) {
+    console.error('App Check verification error:', error);
+    res.status(StatusCodes.UNAUTHORIZED).json({
+      success: false,
+      error: 'App Check token verification failed',
+      code: error.code || 'app-check-verification-failed',
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 });

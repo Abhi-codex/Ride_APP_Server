@@ -1,4 +1,5 @@
 import admin from 'firebase-admin';
+import { getAppCheck } from 'firebase-admin/app-check';
 import dotenv from 'dotenv';
 dotenv.config();
 
@@ -85,6 +86,89 @@ export const firebaseAuth = async (req, res, next) => {
   }
 };
 
+// Firebase App Check middleware for production security
+export const firebaseAppCheck = async (req, res, next) => {
+  try {
+    if (!firebaseInitialized) {
+      return res.status(500).json({ error: 'Firebase not initialized' });
+    }
+
+    // Check for App Check token in headers
+    const appCheckToken = req.header('X-Firebase-AppCheck');
+    
+    if (!appCheckToken) {
+      // In development, you might want to skip App Check
+      if (process.env.NODE_ENV === 'development') {
+        console.log('⚠️ App Check skipped in development mode');
+        return next();
+      }
+      
+      console.error('❌ Missing App Check token');
+      return res.status(401).json({ 
+        error: 'App Check token required',
+        code: 'app-check-required' 
+      });
+    }
+
+    try {
+      // Verify the App Check token
+      const appCheckClaims = await getAppCheck().verifyToken(appCheckToken);
+      
+      console.log('✅ App Check token verified');
+      
+      // Add App Check info to request
+      req.appCheckVerified = true;
+      req.appCheckClaims = appCheckClaims;
+      
+      return next();
+    } catch (appCheckError) {
+      console.error('❌ App Check verification failed:', appCheckError.message);
+      
+      // In development, you might want to allow requests to continue
+      if (process.env.NODE_ENV === 'development') {
+        console.log('⚠️ App Check failed but allowing in development mode');
+        req.appCheckVerified = false;
+        return next();
+      }
+      
+      return res.status(401).json({ 
+        error: 'Invalid App Check token',
+        code: 'app-check-invalid',
+        details: process.env.NODE_ENV === 'development' ? appCheckError.message : undefined
+      });
+    }
+  } catch (error) {
+    console.error('❌ App Check middleware error:', error);
+    return res.status(500).json({ error: 'App Check verification failed' });
+  }
+};
+
+// Combined Firebase Auth + App Check middleware for production endpoints
+export const firebaseSecureAuth = async (req, res, next) => {
+  try {
+    // First verify App Check token
+    await new Promise((resolve, reject) => {
+      firebaseAppCheck(req, res, (error) => {
+        if (error) reject(error);
+        else resolve();
+      });
+    });
+    
+    // Then verify Firebase Auth token
+    await new Promise((resolve, reject) => {
+      firebaseAuth(req, res, (error) => {
+        if (error) reject(error);
+        else resolve();
+      });
+    });
+    
+    next();
+  } catch (error) {
+    // Error already handled by individual middlewares
+    return;
+  }
+};
+
 // Helper function to get Firebase user
 export const getFirebaseUser = (req) => {
   return req.firebaseUser || null;
@@ -103,4 +187,4 @@ export const verifyPhoneNumber = async (phoneNumber, verificationCode) => {
 };
 
 // Export Firebase admin for use in other files
-export { admin as firebaseAdmin };
+export { admin as firebaseAdmin, getAppCheck };
