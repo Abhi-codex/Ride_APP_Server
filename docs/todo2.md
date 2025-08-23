@@ -1,7 +1,7 @@
 # Doctor App Development To-Do
 
 ## 1. Registration & Authentication
-- [ ✔️ ] Implement doctor registration with mobile number (OTP verification via backend; suggest free solution like sending OTP via email for dev/testing, or use services like Firebase Auth SMS for free tier)
+- [ ✔️ ] Implement doctor registration with mobile number (OTP verification via backend using existing generateOTP utility)
 - [ ✔️ ] Store doctor user in database (role: doctor)
 - [ ✔️ ] Login flow for doctors (mobile number + OTP)
 - [ ✔️ ] Add endpoints:
@@ -97,7 +97,7 @@
 ---
 
 ## Notes
-- Use free backend OTP solution for dev/testing (e.g., email OTP, Firebase Auth SMS free tier)
+- Use backend OTP solution with existing generateOTP utility for all authentication
 - All notifications should be real-time (Socket.IO) and push notifications (mobile)
 - No file attachments in chat for now
 - No admin features needed

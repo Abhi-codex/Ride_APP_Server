@@ -8,7 +8,9 @@ import { StatusCodes } from "http-status-codes";
 import jwt from "jsonwebtoken";
 
 // Hospital Staff Login - Simplified for demo purposes
-// In production, this should integrate with your existing Firebase auth
+        // Note: In the production version, you can verify using JWT
+        // to check if the user has proper hospital access rights
+        // In production, this integrates with your existing JWT auth
 export const hospitalStaffLogin = async (req, res) => {
   const { email, password } = req.body;
 
