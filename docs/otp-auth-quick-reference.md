@@ -3,36 +3,32 @@
 ## 📋 Quick Start
 
 ### 1. Send OTP
-```javascript
 POST /auth/send-otp
 {
   "phone": "+1234567890",
   "role": "patient" // "doctor", "driver", "patient"
 }
-```
+
 
 ### 2. Verify OTP
-```javascript
 POST /auth/verify-otp
 {
   "phone": "+1234567890",
   "otp": "123456"
 }
-```
+
 
 ### 3. Authenticated Requests
-```javascript
 Headers: {
   "Authorization": "Bearer <access_token>",
   "Content-Type": "application/json"
 }
-```
+
 
 ---
 
 ## 🔧 Frontend Integration (React Native)
 
-```javascript
 // 1. OTP Functions
 const sendOTP = async (phone, role) => {
   const response = await fetch(`${API_URL}/auth/send-otp`, {
@@ -72,7 +68,7 @@ const apiCall = async (endpoint, options = {}) => {
     }
   });
 };
-```
+
 
 ---
 
@@ -104,12 +100,12 @@ const apiCall = async (endpoint, options = {}) => {
 
 ## 📝 Required Environment Variables
 
-```bash
+bash
 # Essential for JWT authentication
 ACCESS_TOKEN_SECRET=your_secret_key
 REFRESH_TOKEN_SECRET=your_refresh_secret
 MONGO_URI=your_mongodb_connection_string
-```
+
 
 ---
 
@@ -122,6 +118,3 @@ MONGO_URI=your_mongodb_connection_string
 - [ ] Verify token storage
 - [ ] Test authenticated requests
 
----
-
-*For detailed migration steps, see `firebase-to-otp-migration-guide.md`*
