@@ -56,8 +56,8 @@ export const sendOTP = async (req, res) => {
       success: true,
       message: "OTP sent successfully",
       phone: formattedPhone,
-      // Remove this in production - OTP should only be sent via SMS
-      otp: process.env.NODE_ENV === 'development' ? otp : undefined,
+    // For now, always send OTP to frontend (change later for production SMS)
+    otp,
       expiresIn: "10 minutes"
     });
 
