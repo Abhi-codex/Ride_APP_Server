@@ -18,6 +18,7 @@ import hospitalRouter from './routes/hospital.js';
 import hospitalDashboardRouter from './routes/hospitalDashboard.js';
 import messageRouter from './routes/message.js';
 import doctorRouter from './routes/doctor.js';
+import patientRouter from './routes/patient.js';
 
 import handleSocketConnection from './controllers/sockets.js';
 
@@ -103,6 +104,7 @@ app.use("/driver", driverRouter);
 app.use("/hospitals", hospitalRouter);
 app.use("/hospital-dashboard", hospitalDashboardRouter);
 app.use("/doctor", doctorRouter);
+app.use("/patient", patientRouter);
 
 // Middleware
 app.use(notFoundMiddleware);
@@ -132,6 +134,7 @@ const start = async () => {
     console.log(`🏥 Hospital search: http://${localIp}:${PORT}/hospitals/*`);
     console.log(`🚨 Emergency calls: http://${localIp}:${PORT}/ride/*`);
     console.log(`👨‍⚕️ Driver endpoints: http://${localIp}:${PORT}/driver/*`);
+    console.log(`🏥 Patient profiles: http://${localIp}:${PORT}/patient/*`);
   });
 
   try {
