@@ -6,38 +6,128 @@ import User from "../models/User.js";
 import { BadRequestError, UnauthenticatedError } from "../errors/index.js";
 import { StatusCodes } from "http-status-codes";
 import jwt from "jsonwebtoken";
+import bcrypt from "bcrypt";
+import NodeCache from "node-cache";
+import mongoose from "mongoose";
 
-// Hospital Staff Login - Simplified for demo purposes
-        // Note: In the production version, you can verify using JWT
-        // to check if the user has proper hospital access rights
-        // In production, this integrates with your existing JWT auth
-export const hospitalStaffLogin = async (req, res) => {
-  const { email, password } = req.body;
+// Initialize cache with 5-minute default TTL
+const cache = new NodeCache({ stdTTL: 300, checkperiod: 60 });
 
-  if (!email || !password) {
-    throw new BadRequestError("Please provide email and password");
+// Track login attempts for rate limiting
+const loginAttempts = new Map();
+
+/**
+ * Clean expired login attempts
+ */
+const cleanExpiredAttempts = () => {
+  const now = Date.now();
+  for (const [key, data] of loginAttempts.entries()) {
+    if (now > data.resetTime) {
+      loginAttempts.delete(key);
+    }
   }
+};
 
+/**
+ * Check if IP is rate limited
+ */
+const isRateLimited = (ip) => {
+  cleanExpiredAttempts();
+  const attempts = loginAttempts.get(ip);
+  return attempts && attempts.count >= 5 && Date.now() < attempts.resetTime;
+};
+
+/**
+ * Record failed login attempt
+ */
+const recordFailedAttempt = (ip) => {
+  cleanExpiredAttempts();
+  const now = Date.now();
+  const attempts = loginAttempts.get(ip) || { count: 0, resetTime: now + 15 * 60 * 1000 };
+  
+  attempts.count += 1;
+  if (attempts.count >= 5) {
+    attempts.resetTime = now + 15 * 60 * 1000; // 15 minutes lockout
+  }
+  
+  loginAttempts.set(ip, attempts);
+};
+
+/**
+ * Clear login attempts on successful login
+ */
+const clearFailedAttempts = (ip) => {
+  loginAttempts.delete(ip);
+};
+
+export const hospitalStaffLogin = async (req, res) => {
+  const clientIP = req.ip || req.connection.remoteAddress || req.socket.remoteAddress;
+  
   try {
+    // Check rate limiting
+    if (isRateLimited(clientIP)) {
+      return res.status(StatusCodes.TOO_MANY_REQUESTS).json({
+        success: false,
+        error: "Too many failed login attempts. Please try again in 15 minutes."
+      });
+    }
+
+    const { email, password } = req.body;
+
+    if (!email || !password) {
+      throw new BadRequestError("Please provide email and password");
+    }
+
     // Find staff member by email and populate hospital data
-    const staffMember = await HospitalStaff.findOne({ email, isActive: true })
-      .populate('hospitalId', 'name address location')
-      .populate('user');
+    const staffMember = await HospitalStaff.findOne({ 
+      email: email.toLowerCase().trim(), 
+      isActive: true 
+    })
+    .populate('hospitalId', 'name address location')
+    .select('+hashedPassword +loginAttempts +lastFailedLogin');
 
     if (!staffMember) {
+      recordFailedAttempt(clientIP);
       throw new UnauthenticatedError("Invalid credentials");
     }
 
-    // Simple password check for demo (use proper hashing in production)
-    if (password !== "password123") {
+    // Check if account is locked due to too many failed attempts
+    if (staffMember.loginAttempts >= 5) {
+      const lockoutTime = 15 * 60 * 1000; // 15 minutes
+      const timeSinceLastFailed = Date.now() - new Date(staffMember.lastFailedLogin).getTime();
+      
+      if (timeSinceLastFailed < lockoutTime) {
+        recordFailedAttempt(clientIP);
+        throw new UnauthenticatedError("Account temporarily locked due to too many failed attempts");
+      } else {
+        // Reset attempts if lockout period has passed
+        staffMember.loginAttempts = 0;
+        staffMember.lastFailedLogin = null;
+      }
+    }
+
+    // Verify password using bcrypt
+    const isValidPassword = await bcrypt.compare(password, staffMember.hashedPassword);
+    
+    if (!isValidPassword) {
+      // Record failed attempt
+      staffMember.loginAttempts = (staffMember.loginAttempts || 0) + 1;
+      staffMember.lastFailedLogin = new Date();
+      await staffMember.save();
+      
+      recordFailedAttempt(clientIP);
       throw new UnauthenticatedError("Invalid credentials");
     }
 
-    // Update last login
+    // Successful login - reset attempts
+    staffMember.loginAttempts = 0;
+    staffMember.lastFailedLogin = null;
     staffMember.lastLogin = new Date();
     await staffMember.save();
+    
+    clearFailedAttempts(clientIP);
 
-    // Generate JWT token directly for hospital staff
+    // Generate JWT token with consistent secret
     const token = jwt.sign(
       {
         id: staffMember._id,
@@ -46,11 +136,15 @@ export const hospitalStaffLogin = async (req, res) => {
         hospitalId: staffMember.hospitalId._id,
         type: 'hospital-staff'
       },
-      process.env.ACCESS_TOKEN_SECRET || 'hospital-fallback-secret',
+      process.env.JWT_SECRET,
       { expiresIn: '24h' }
     );
 
+    // Log successful login for audit
+    console.log(`Hospital staff login: ${staffMember.email} from ${clientIP} at ${new Date()}`);
+
     res.status(StatusCodes.OK).json({
+      success: true,
       staff: {
         id: staffMember._id,
         name: staffMember.name,
@@ -63,89 +157,120 @@ export const hospitalStaffLogin = async (req, res) => {
       token,
     });
   } catch (error) {
-    res.status(StatusCodes.INTERNAL_SERVER_ERROR).json({ error: error.message });
+    console.error(`Hospital login error for IP ${clientIP}:`, error.message);
+    res.status(error.statusCode || StatusCodes.INTERNAL_SERVER_ERROR).json({ 
+      success: false,
+      error: error.message 
+    });
   }
 };
 
 // Get Hospital Dashboard Overview
 export const getHospitalDashboard = async (req, res) => {
   try {
-    const staffMember = await HospitalStaff.findOne({ user: req.user.id })
-      .populate('hospitalId');
-
-    if (!staffMember) {
-      throw new UnauthenticatedError("Access denied");
+    const hospitalId = req.user.hospitalId;
+    const cacheKey = `dashboard-${hospitalId}`;
+    
+    // Try cache first
+    const cached = cache.get(cacheKey);
+    if (cached) {
+      return res.status(StatusCodes.OK).json({
+        success: true,
+        cached: true,
+        ...cached
+      });
     }
-
-    const hospitalId = staffMember.hospitalId._id;
 
     // Get current date for filtering
     const today = new Date();
     const startOfDay = new Date(today.setHours(0, 0, 0, 0));
     const endOfDay = new Date(today.setHours(23, 59, 59, 999));
 
-    // Get active rides heading to this hospital
-    const activeRides = await Ride.find({
-      'destinationHospital.hospitalId': hospitalId,
-      status: { $in: ["SEARCHING_FOR_RIDER", "START", "ARRIVED"] }
-    })
-    .populate('customer', 'name phone')
-    .populate('rider', 'name phone')
-    .sort({ createdAt: -1 });
+    // Parallel database queries for better performance
+    const [activeRides, affiliatedDrivers, todayCompletedRides, emergencyStats, onlineDriversCount] = await Promise.all([
+      // Get active rides heading to this hospital
+      Ride.find({
+        'destinationHospital.hospitalId': hospitalId,
+        status: { $in: ["SEARCHING_FOR_RIDER", "START", "ARRIVED"] }
+      })
+      .populate('customer', 'name phone')
+      .populate('rider', 'name phone')
+      .sort({ createdAt: -1 })
+      .limit(20), // Limit for performance
 
-    // Get affiliated drivers
-    const affiliatedDrivers = await Driver.find({
-      'hospitalAffiliation.hospitalId': hospitalId.toString(),
-      'hospitalAffiliation.isAffiliated': true
-    })
-    .populate('user', 'name phone');
+      // Get affiliated drivers
+      Driver.find({
+        'hospitalAffiliation.hospitalId': hospitalId.toString(),
+        'hospitalAffiliation.isAffiliated': true
+      })
+      .populate('user', 'name phone')
+      .select('user vehicle isOnline updatedAt')
+      .limit(50), // Reasonable limit
 
-    // Get today's completed rides
-    const todayCompletedRides = await Ride.find({
-      'destinationHospital.hospitalId': hospitalId,
-      status: "COMPLETED",
-      createdAt: { $gte: startOfDay, $lte: endOfDay }
-    }).countDocuments();
+      // Get today's completed rides count
+      Ride.countDocuments({
+        'destinationHospital.hospitalId': hospitalId,
+        status: "COMPLETED",
+        createdAt: { $gte: startOfDay, $lte: endOfDay }
+      }),
 
-    // Get emergency statistics for today
-    const emergencyStats = await Ride.aggregate([
-      {
-        $match: {
-          'destinationHospital.hospitalId': hospitalId,
-          createdAt: { $gte: startOfDay, $lte: endOfDay }
-        }
-      },
-      {
-        $group: {
-          _id: '$emergency.type',
-          count: { $sum: 1 },
-          criticalCount: {
-            $sum: { $cond: [{ $eq: ['$emergency.priority', 'critical'] }, 1, 0] }
+      // Get emergency statistics for today
+      Ride.aggregate([
+        {
+          $match: {
+            'destinationHospital.hospitalId': hospitalId,
+            createdAt: { $gte: startOfDay, $lte: endOfDay }
           }
-        }
-      }
+        },
+        {
+          $group: {
+            _id: '$emergency.type',
+            count: { $sum: 1 },
+            criticalCount: {
+              $sum: { $cond: [{ $eq: ['$emergency.priority', 'critical'] }, 1, 0] }
+            }
+          }
+        },
+        { $limit: 10 } // Limit emergency types
+      ]),
+
+      // Get online affiliated drivers count
+      Driver.countDocuments({
+        'hospitalAffiliation.hospitalId': hospitalId.toString(),
+        'hospitalAffiliation.isAffiliated': true,
+        isOnline: true
+      })
     ]);
 
-    // Get online affiliated drivers count
-    const onlineDriversCount = await Driver.countDocuments({
-      'hospitalAffiliation.hospitalId': hospitalId.toString(),
-      'hospitalAffiliation.isAffiliated': true,
-      isOnline: true
-    });
-
-    res.status(StatusCodes.OK).json({
-      hospital: staffMember.hospitalId,
-      activeRides: activeRides.length,
-      todayCompletedRides,
-      affiliatedDrivers: affiliatedDrivers.length,
-      onlineDrivers: onlineDriversCount,
+    const dashboardData = {
+      hospital: req.user.staffMember.hospitalId,
+      statistics: {
+        activeRides: activeRides.length,
+        todayCompletedRides,
+        affiliatedDrivers: affiliatedDrivers.length,
+        onlineDrivers: onlineDriversCount
+      },
       emergencyStats,
       recentRides: activeRides.slice(0, 10), // Latest 10 active rides
-      drivers: affiliatedDrivers
+      drivers: affiliatedDrivers.slice(0, 20), // Top 20 drivers
+      lastUpdated: new Date()
+    };
+
+    // Cache for 2 minutes
+    cache.set(cacheKey, dashboardData, 120);
+
+    res.status(StatusCodes.OK).json({
+      success: true,
+      cached: false,
+      ...dashboardData
     });
 
   } catch (error) {
-    res.status(StatusCodes.INTERNAL_SERVER_ERROR).json({ error: error.message });
+    console.error(`Dashboard error for hospital ${req.user.hospitalId}:`, error.message);
+    res.status(StatusCodes.INTERNAL_SERVER_ERROR).json({ 
+      success: false,
+      error: "Failed to load dashboard data. Please try again."
+    });
   }
 };
 
@@ -343,43 +468,76 @@ export const createHospitalStaff = async (req, res) => {
   try {
     const { name, email, password, phone, hospitalId, role, department, permissions } = req.body;
 
+    // Check if email already exists
+    const existingStaff = await HospitalStaff.findOne({ email: email.toLowerCase().trim() });
+    if (existingStaff) {
+      throw new BadRequestError("Email already registered");
+    }
+
+    const existingUser = await User.findOne({ email: email.toLowerCase().trim() });
+    if (existingUser) {
+      throw new BadRequestError("Email already registered in the system");
+    }
+
+    // Verify hospital exists
+    const hospital = await Hospital.findById(hospitalId);
+    if (!hospital) {
+      throw new BadRequestError("Invalid hospital ID");
+    }
+
+    // Hash password with bcrypt
+    const saltRounds = 12;
+    const hashedPassword = await bcrypt.hash(password, saltRounds);
+
     // Create User first
     const user = await User.create({
-      name,
-      email,
-      password,
-      phone,
+      name: name.trim(),
+      email: email.toLowerCase().trim(),
+      password: hashedPassword,
+      phone: phone.trim(),
       role: 'hospital_staff'
     });
 
-    // Create Hospital Staff
+    // Create Hospital Staff with secure defaults
     const staffMember = await HospitalStaff.create({
       user: user._id,
-      name,
-      email,
-      phone,
+      name: name.trim(),
+      email: email.toLowerCase().trim(),
+      phone: phone.trim(),
       hospitalId,
       role: role || 'staff',
       department: department || 'emergency',
+      hashedPassword: hashedPassword,
       permissions: permissions || {
         viewDashboard: true,
         manageDrivers: false,
         viewRides: true,
         manageHospitalInfo: false,
         viewAnalytics: true
-      }
+      },
+      loginAttempts: 0,
+      isActive: true
     });
 
     const populatedStaff = await HospitalStaff.findById(staffMember._id)
-      .populate('hospitalId', 'name address');
+      .populate('hospitalId', 'name address')
+      .select('-hashedPassword -loginAttempts');
+
+    // Log account creation for audit
+    console.log(`Hospital staff account created: ${email} for hospital ${hospitalId} at ${new Date()}`);
 
     res.status(StatusCodes.CREATED).json({ 
+      success: true,
       message: "Hospital staff created successfully",
       staff: populatedStaff 
     });
 
   } catch (error) {
-    res.status(StatusCodes.INTERNAL_SERVER_ERROR).json({ error: error.message });
+    console.error('Create staff error:', error.message);
+    res.status(error.statusCode || StatusCodes.INTERNAL_SERVER_ERROR).json({ 
+      success: false,
+      error: error.message 
+    });
   }
 };
 
@@ -410,13 +568,18 @@ export const debugAuth = async (req, res) => {
 // 1. Get Incoming Patient Details
 export const getIncomingPatients = async (req, res) => {
   try {
-    const staffMember = await HospitalStaff.findOne({ user: req.user.id });
+    const hospitalId = req.user.hospitalId;
+    const cacheKey = `incoming-patients-${hospitalId}`;
     
-    if (!staffMember) {
-      throw new UnauthenticatedError("Access denied");
+    // Try cache first (shorter cache time for real-time data)
+    const cached = cache.get(cacheKey);
+    if (cached) {
+      return res.status(StatusCodes.OK).json({
+        success: true,
+        cached: true,
+        ...cached
+      });
     }
-
-    const hospitalId = staffMember.hospitalId;
 
     // Get all rides heading to this hospital that are not completed
     const incomingRides = await Ride.find({
@@ -433,16 +596,36 @@ export const getIncomingPatients = async (req, res) => {
         select: 'name phone'
       }
     })
-    .sort({ createdAt: -1 });
+    .sort({ 'emergency.priority': -1, createdAt: -1 }) // Priority first, then newest
+    .limit(50); // Reasonable limit for performance
+
+    if (!incomingRides || incomingRides.length === 0) {
+      const response = {
+        count: 0,
+        patients: [],
+        message: "No incoming patients at this time"
+      };
+      
+      // Cache empty result for shorter time
+      cache.set(cacheKey, response, 30);
+      
+      return res.status(StatusCodes.OK).json({
+        success: true,
+        cached: false,
+        ...response
+      });
+    }
 
     // Format response with patient details, condition, ETA, ambulance ID
     const formattedPatients = incomingRides.map(ride => {
       const eta = ride.destinationHospital?.estimatedArrival || 
                  new Date(Date.now() + 30 * 60000); // Default 30 min ETA
 
+      const timeToArrival = Math.max(0, Math.floor((eta - new Date()) / 60000));
+
       return {
         id: ride._id,
-        ambulanceId: ride._id.toString().slice(-6).toUpperCase(),
+        ambulanceId: `AMB-${ride._id.toString().slice(-6).toUpperCase()}`,
         patient: {
           name: ride.customer?.name || "Emergency Patient",
           phone: ride.customer?.phone || null,
@@ -455,32 +638,48 @@ export const getIncomingPatients = async (req, res) => {
           specialInstructions: ride.contactInfo?.specialInstructions || null
         },
         eta: eta,
-        timeToArrival: Math.max(0, Math.floor((eta - new Date()) / 60000)), // minutes
+        timeToArrival: timeToArrival,
         ambulance: {
-          type: ride.vehicle?.toUpperCase(),
+          type: (ride.vehicle || 'standard').toUpperCase(),
           status: ride.status,
           driver: ride.rider ? {
-            name: ride.rider.name,
-            phone: ride.rider.phone
+            name: ride.rider.name || ride.rider.user?.name || 'Driver',
+            phone: ride.rider.phone || ride.rider.user?.phone || null
           } : null,
           currentLocation: ride.liveTracking?.currentLocation || null
         },
-        pickup: ride.pickup,
+        pickup: {
+          address: ride.pickup?.address || 'Unknown location',
+          coordinates: ride.pickup?.coordinates || null
+        },
         createdAt: ride.createdAt,
-        estimatedDistance: ride.distance || 0
+        estimatedDistance: ride.distance || 0,
+        status: ride.status
       };
     });
 
+    const response = {
+      count: formattedPatients.length,
+      patients: formattedPatients,
+      lastUpdated: new Date()
+    };
+
+    // Cache for 1 minute (real-time data needs frequent updates)
+    cache.set(cacheKey, response, 60);
+
     res.status(StatusCodes.OK).json({
       success: true,
-      count: formattedPatients.length,
-      patients: formattedPatients
+      cached: false,
+      ...response
     });
 
   } catch (error) {
+    console.error(`Incoming patients error for hospital ${req.user.hospitalId}:`, error.message);
     res.status(StatusCodes.INTERNAL_SERVER_ERROR).json({ 
       success: false,
-      error: error.message 
+      error: "Failed to load incoming patients. Please try again.",
+      count: 0,
+      patients: []
     });
   }
 };
@@ -733,44 +932,58 @@ export const getEmergencyContacts = async (req, res) => {
 // 5. Update Bed Availability
 export const updateBedAvailability = async (req, res) => {
   try {
-    const staffMember = await HospitalStaff.findOne({ user: req.user.id });
-    
-    if (!staffMember || !staffMember.permissions.manageHospitalInfo) {
-      throw new UnauthenticatedError("Access denied - insufficient permissions");
-    }
-
-    const hospitalId = staffMember.hospitalId;
+    const hospitalId = req.user.hospitalId;
     const { bedDetails, totalBeds, availableBeds } = req.body;
 
-    const updateData = {
-      lastUpdated: new Date()
-    };
+    // Additional server-side validation
+    const calculatedTotal = bedDetails.icu.total + bedDetails.general.total + bedDetails.emergency.total;
+    const calculatedAvailable = bedDetails.icu.available + bedDetails.general.available + bedDetails.emergency.available;
 
-    if (bedDetails) {
-      if (bedDetails.icu) {
-        updateData['bedDetails.icu.total'] = bedDetails.icu.total;
-        updateData['bedDetails.icu.available'] = bedDetails.icu.available;
-      }
-      if (bedDetails.general) {
-        updateData['bedDetails.general.total'] = bedDetails.general.total;
-        updateData['bedDetails.general.available'] = bedDetails.general.available;
-      }
-      if (bedDetails.emergency) {
-        updateData['bedDetails.emergency.total'] = bedDetails.emergency.total;
-        updateData['bedDetails.emergency.available'] = bedDetails.emergency.available;
-      }
+    if (totalBeds && totalBeds !== calculatedTotal) {
+      throw new BadRequestError("Total beds count doesn't match sum of individual bed types");
     }
 
-    if (totalBeds !== undefined) updateData.totalBeds = totalBeds;
-    if (availableBeds !== undefined) updateData.availableBeds = availableBeds;
+    if (availableBeds && availableBeds !== calculatedAvailable) {
+      throw new BadRequestError("Available beds count doesn't match sum of available beds by type");
+    }
+
+    const updateData = {
+      'bedDetails.icu.total': bedDetails.icu.total,
+      'bedDetails.icu.available': bedDetails.icu.available,
+      'bedDetails.general.total': bedDetails.general.total,
+      'bedDetails.general.available': bedDetails.general.available,
+      'bedDetails.emergency.total': bedDetails.emergency.total,
+      'bedDetails.emergency.available': bedDetails.emergency.available,
+      totalBeds: calculatedTotal,
+      availableBeds: calculatedAvailable,
+      lastUpdated: new Date()
+    };
 
     const updatedHospital = await Hospital.findByIdAndUpdate(
       hospitalId,
       updateData,
-      { new: true }
+      { 
+        new: true,
+        runValidators: true,
+        select: 'name bedDetails totalBeds availableBeds lastUpdated'
+      }
     );
 
-    // Emit real-time update to all connected clients
+    if (!updatedHospital) {
+      throw new BadRequestError("Hospital not found");
+    }
+
+    // Clear related cache
+    const cacheKeys = [
+      `dashboard-${hospitalId}`,
+      `bed-availability-${hospitalId}`
+    ];
+    cacheKeys.forEach(key => cache.del(key));
+
+    // Log bed update for audit
+    console.log(`Bed availability updated for hospital ${hospitalId} by staff ${req.user.email} at ${new Date()}`);
+
+    // Emit real-time update to all connected clients (if WebSocket is configured)
     if (req.io) {
       req.io.emit('bedAvailabilityUpdate', {
         hospitalId: hospitalId,
@@ -795,9 +1008,10 @@ export const updateBedAvailability = async (req, res) => {
     });
 
   } catch (error) {
-    res.status(StatusCodes.INTERNAL_SERVER_ERROR).json({ 
+    console.error(`Bed update error for hospital ${req.user.hospitalId}:`, error.message);
+    res.status(error.statusCode || StatusCodes.INTERNAL_SERVER_ERROR).json({ 
       success: false,
-      error: error.message 
+      error: error.message
     });
   }
 };
@@ -805,35 +1019,60 @@ export const updateBedAvailability = async (req, res) => {
 // 6. Get Current Bed Availability
 export const getBedAvailability = async (req, res) => {
   try {
-    const staffMember = await HospitalStaff.findOne({ user: req.user.id });
+    const hospitalId = req.user.hospitalId;
+    const cacheKey = `bed-availability-${hospitalId}`;
     
-    if (!staffMember) {
-      throw new UnauthenticatedError("Access denied");
+    // Try cache first
+    const cached = cache.get(cacheKey);
+    if (cached) {
+      return res.status(StatusCodes.OK).json({
+        success: true,
+        cached: true,
+        ...cached
+      });
     }
 
-    const hospital = await Hospital.findById(staffMember.hospitalId)
+    const hospital = await Hospital.findById(hospitalId)
       .select('name bedDetails totalBeds availableBeds lastUpdated');
 
-    res.status(StatusCodes.OK).json({
-      success: true,
+    if (!hospital) {
+      throw new BadRequestError("Hospital not found");
+    }
+
+    // Ensure bed details exist with defaults
+    const bedDetails = hospital.bedDetails || {
+      icu: { total: 0, available: 0 },
+      general: { total: 0, available: 0 },
+      emergency: { total: 0, available: 0 }
+    };
+
+    const response = {
       hospital: {
         id: hospital._id,
         name: hospital.name,
-        bedDetails: hospital.bedDetails || {
-          icu: { total: 0, available: 0 },
-          general: { total: 0, available: 0 },
-          emergency: { total: 0, available: 0 }
-        },
+        bedDetails: bedDetails,
         totalBeds: hospital.totalBeds || 0,
         availableBeds: hospital.availableBeds || 0,
-        lastUpdated: hospital.lastUpdated
+        lastUpdated: hospital.lastUpdated || hospital.updatedAt,
+        occupancyRate: hospital.totalBeds > 0 ? 
+          Math.round(((hospital.totalBeds - hospital.availableBeds) / hospital.totalBeds) * 100) : 0
       }
+    };
+
+    // Cache for 5 minutes
+    cache.set(cacheKey, response, 300);
+
+    res.status(StatusCodes.OK).json({
+      success: true,
+      cached: false,
+      ...response
     });
 
   } catch (error) {
-    res.status(StatusCodes.INTERNAL_SERVER_ERROR).json({ 
+    console.error(`Bed availability error for hospital ${req.user.hospitalId}:`, error.message);
+    res.status(error.statusCode || StatusCodes.INTERNAL_SERVER_ERROR).json({ 
       success: false,
-      error: error.message 
+      error: "Failed to load bed availability. Please try again."
     });
   }
 };
@@ -842,10 +1081,10 @@ export const getBedAvailability = async (req, res) => {
 export const updateAmbulanceLocation = async (req, res) => {
   try {
     const { rideId } = req.params;
-    const { latitude, longitude } = req.body;
+    const { latitude, longitude, address, timestamp } = req.body;
 
-    if (!latitude || !longitude) {
-      throw new BadRequestError("Latitude and longitude are required");
+    if (!rideId || !mongoose.Types.ObjectId.isValid(rideId)) {
+      throw new BadRequestError("Valid ride ID is required");
     }
 
     const ride = await Ride.findByIdAndUpdate(
@@ -853,34 +1092,60 @@ export const updateAmbulanceLocation = async (req, res) => {
       {
         'liveTracking.currentLocation.latitude': latitude,
         'liveTracking.currentLocation.longitude': longitude,
-        'liveTracking.lastUpdated': new Date()
+        'liveTracking.currentLocation.address': address || `${latitude}, ${longitude}`,
+        'liveTracking.lastUpdated': timestamp || new Date()
       },
-      { new: true }
-    ).populate('destinationHospital.hospitalId');
+      { 
+        new: true,
+        select: '_id destinationHospital liveTracking'
+      }
+    );
+
+    if (!ride) {
+      throw new BadRequestError("Ride not found");
+    }
+
+    // Clear related cache
+    if (ride.destinationHospital?.hospitalId) {
+      const hospitalId = ride.destinationHospital.hospitalId;
+      const cacheKeys = [
+        `incoming-patients-${hospitalId}`,
+        `live-tracking-${hospitalId}`,
+        `dashboard-${hospitalId}`
+      ];
+      cacheKeys.forEach(key => cache.del(key));
+    }
 
     // Emit real-time location update
     if (req.io && ride.destinationHospital?.hospitalId) {
       req.io.emit('ambulanceLocationUpdate', {
         rideId: ride._id,
-        ambulanceId: ride._id.toString().slice(-6).toUpperCase(),
+        ambulanceId: `AMB-${ride._id.toString().slice(-6).toUpperCase()}`,
         location: {
           latitude,
-          longitude
+          longitude,
+          address: address || `${latitude}, ${longitude}`
         },
         hospitalId: ride.destinationHospital.hospitalId,
-        timestamp: new Date()
+        timestamp: timestamp || new Date()
       });
     }
 
     res.status(StatusCodes.OK).json({
       success: true,
-      message: "Location updated successfully"
+      message: "Location updated successfully",
+      data: {
+        rideId: ride._id,
+        location: ride.liveTracking?.currentLocation,
+        lastUpdated: ride.liveTracking?.lastUpdated
+      }
     });
 
   } catch (error) {
-    res.status(StatusCodes.INTERNAL_SERVER_ERROR).json({ 
+    console.error(`Location update error for ride ${req.params.rideId}:`, error.message);
+    res.status(error.statusCode || StatusCodes.INTERNAL_SERVER_ERROR).json({ 
       success: false,
-      error: error.message 
+      error: error.message
     });
   }
 };

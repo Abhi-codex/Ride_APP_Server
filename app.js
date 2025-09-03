@@ -6,6 +6,8 @@ import http from 'http';
 import mongoose from 'mongoose';
 import process from 'process';
 import { Server as socketIo } from 'socket.io'; 
+import helmet from 'helmet';
+import mongoSanitize from 'express-mongo-sanitize';
 import connectDB from './config/connect.js';
 import notFoundMiddleware from './middleware/not-found.js';
 import errorHandlerMiddleware from './middleware/error-handler.js';
@@ -26,15 +28,46 @@ dotenv.config();
 
 // Debug environment variables
 console.log('DEBUG: Environment variables loaded');
+console.log('DEBUG: JWT_SECRET configured:', !!process.env.JWT_SECRET);
 
 EventEmitter.defaultMaxListeners = 20;
 
 const app = express();
 
+// Security middleware
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      scriptSrc: ["'self'"],
+      imgSrc: ["'self'", "data:", "https:"],
+      connectSrc: ["'self'", "ws:", "wss:"]
+    }
+  },
+  crossOriginEmbedderPolicy: false
+}));
+
+// MongoDB injection protection
+app.use(mongoSanitize());
+
+// Trust proxy for rate limiting and IP detection
+app.set('trust proxy', 1);
+
+// CORS configuration
 app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', '*');
+  const allowedOrigins = process.env.NODE_ENV === 'production' 
+    ? ['https://ambulancebackend.onrender.com'] // Production domains
+    : ['http://localhost:3000', 'http://localhost:3001'];
+
+  const origin = req.headers.origin;
+  if (allowedOrigins.includes(origin)) {
+    res.header('Access-Control-Allow-Origin', origin);
+  }
+  
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
   res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+  res.header('Access-Control-Allow-Credentials', 'true');
   
   if (req.method === 'OPTIONS') {
     res.sendStatus(200);
@@ -43,17 +76,27 @@ app.use((req, res, next) => {
   }
 });
 
+// Body parsing middleware
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-app.use(express.json());
-
+// Request logging middleware
 app.use((req, res, next) => {
-  console.log(`${new Date().toISOString()} - ${req.method} ${req.path} from ${req.ip}`);
+  const clientIP = req.ip || req.connection.remoteAddress || 'unknown';
+  console.log(`${new Date().toISOString()} - ${req.method} ${req.path} from ${clientIP}`);
   next();
 });
 
 const server = http.createServer(app);
 
-const io = new socketIo(server, { cors: { origin: "*" } });
+const io = new socketIo(server, { 
+  cors: { 
+    origin: process.env.NODE_ENV === 'production' 
+      ? ['https://ambulancebackend.onrender.com'] // Production domain
+      : ["http://localhost:3000", "http://localhost:3001"],
+    credentials: true
+  } 
+});
 
 console.log('DEBUG: Socket.IO instance created:', !!io);
 console.log('DEBUG: Socket.IO type:', typeof io);
@@ -63,7 +106,6 @@ app.use((req, res, next) => {
   console.log('DEBUG: Attaching io to req. io exists:', !!io, 'io.to exists:', !!(io && io.to));
   return next();
 });
-
 
 handleSocketConnection(io);
 
