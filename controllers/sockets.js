@@ -122,6 +122,81 @@ const handleSocketConnection = (io) => {
           });
         }
       });
+
+      // Driver cancellation event
+      socket.on("driverCancelRide", async ({ rideId, reason }) => {
+        try {
+          if (!rideId) {
+            return socket.emit("error", { message: "Ride ID is required for cancellation" });
+          }
+
+          const ride = await Ride.findById(rideId).populate('customer rider');
+          if (!ride) {
+            return socket.emit("error", { message: "Ride not found" });
+          }
+
+          // Verify this driver is assigned to the ride
+          if (!ride.rider || ride.rider._id.toString() !== user.id) {
+            return socket.emit("error", { message: "You are not assigned to this ride" });
+          }
+
+          // Check if ride can be cancelled by driver
+          const cancellableStatuses = ['START', 'ARRIVED'];
+          if (!cancellableStatuses.includes(ride.status)) {
+            return socket.emit("error", { 
+              message: `Ride cannot be cancelled. Current status: ${ride.status}` 
+            });
+          }
+
+          // Update ride status to CANCELLED
+          const updatedRide = await Ride.findByIdAndUpdate(
+            rideId, 
+            {
+              status: 'CANCELLED',
+              cancellation: {
+                cancelledBy: 'driver',
+                cancelledAt: new Date(),
+                cancelReason: reason || 'Cancelled by driver',
+                cancellationFee: 0 // No fee charged to patient for driver cancellation
+              }
+            },
+            { new: true }
+          ).populate('customer rider');
+
+          if (updatedRide) {
+            // Notify driver of successful cancellation
+            socket.emit("rideCancelledSuccess", {
+              message: "Ride cancelled successfully",
+              rideId: rideId,
+              status: 'CANCELLED',
+              cancellationDetails: updatedRide.cancellation
+            });
+
+            // Notify patient about driver cancellation
+            io.to(`user_${updatedRide.customer._id}`).emit("rideCancelledByDriver", {
+              message: "Driver has cancelled your ride. Finding you another ambulance...",
+              rideId: rideId,
+              status: 'CANCELLED',
+              cancellationDetails: updatedRide.cancellation
+            });
+
+            // Broadcast to ride room
+            io.to(`ride_${rideId}`).emit("rideUpdate", {
+              rideId: rideId,
+              status: 'CANCELLED',
+              cancellationDetails: updatedRide.cancellation,
+              message: "Ride cancelled by driver"
+            });
+
+            console.log(`Driver ${user.id} cancelled ride ${rideId}: ${reason || 'No reason provided'}`);
+          } else {
+            socket.emit("error", { message: "Failed to cancel ride" });
+          }
+        } catch (error) {
+          console.error(`Error in driver cancel ride:`, error);
+          socket.emit("error", { message: "Failed to cancel ride" });
+        }
+      });
     }
 
     if (user.role === "patient") {
@@ -166,14 +241,60 @@ const handleSocketConnection = (io) => {
           socket.on("cancelRide", async () => {
             canceled = true;
             clearInterval(retryInterval);
-            await Ride.findByIdAndDelete(rideId);
-            socket.emit("rideCanceled", { message: "Emergency call canceled" });
+            
+            try {
+              // Update ride status to CANCELLED instead of deleting
+              const updatedRide = await Ride.findByIdAndUpdate(
+                rideId, 
+                {
+                  status: 'CANCELLED',
+                  cancellation: {
+                    cancelledBy: 'patient',
+                    cancelledAt: new Date(),
+                    cancelReason: 'Cancelled by patient during search',
+                    cancellationFee: 0 // No fee during search phase
+                  }
+                },
+                { new: true }
+              ).populate('customer rider');
 
-            if (ride.rider) {
-              const driverSocket = getDriverSocket(ride.rider._id);
-              driverSocket?.emit("rideCanceled", { message: `Patient ${user.id} canceled the emergency call.` });
+              if (updatedRide) {
+                // Emit cancellation event to all parties
+                socket.emit("rideCanceled", { 
+                  message: "Emergency call canceled",
+                  rideId: rideId,
+                  status: 'CANCELLED',
+                  cancellationDetails: updatedRide.cancellation
+                });
+
+                // Notify driver if assigned
+                if (updatedRide.rider) {
+                  const driverSocket = getDriverSocket(updatedRide.rider._id);
+                  driverSocket?.emit("rideCanceled", { 
+                    message: `Patient canceled the emergency call to ${updatedRide.drop.address}`,
+                    rideId: rideId,
+                    status: 'CANCELLED',
+                    cancellationDetails: updatedRide.cancellation
+                  });
+                }
+
+                // Broadcast to ride room for real-time updates
+                io.to(`ride_${rideId}`).emit("rideUpdate", {
+                  rideId: rideId,
+                  status: 'CANCELLED',
+                  cancellationDetails: updatedRide.cancellation,
+                  message: "Ride has been cancelled"
+                });
+
+                console.log(`Patient ${user.id} canceled emergency call ${rideId} - Status updated to CANCELLED`);
+              } else {
+                console.error(`Failed to update ride ${rideId} status to CANCELLED`);
+                socket.emit("error", { message: "Failed to cancel ride properly" });
+              }
+            } catch (error) {
+              console.error(`Error canceling ride ${rideId}:`, error);
+              socket.emit("error", { message: "Failed to cancel emergency call" });
             }
-            console.log(`Patient ${user.id} canceled emergency call ${rideId}`);
           });
         } catch (error) {
           console.error("Error searching for ambulance driver:", error);

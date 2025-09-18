@@ -213,7 +213,7 @@ export const updateRideStatus = async (req, res) => {
       throw new NotFoundError("Emergency call not found");
     }
 
-    if (!["START", "ARRIVED", "COMPLETED"].includes(status)) {
+    if (!["START", "ARRIVED", "COMPLETED", "CANCELLED"].includes(status)) {
       throw new BadRequestError("Invalid emergency call status");
     }
 
@@ -250,28 +250,79 @@ export const getMyRides = async (req, res) => {
       .populate("rider", "name phone")
       .sort({ createdAt: -1 });
 
-    // Attach hospital details to each ride
+    // Attach hospital details to each ride and enhance with cancellation info
     const Hospital = (await import("../models/Hospital.js")).default;
     const hospitalMap = {};
-    for (const ride of rides) {
+    
+    const enhancedRides = await Promise.all(rides.map(async (ride) => {
+      const rideObj = ride.toObject();
+      
+      // Add hospital details
       if (ride.hospital) {
         if (!hospitalMap[ride.hospital]) {
           hospitalMap[ride.hospital] = await Hospital.findOne({ placeId: ride.hospital });
         }
-        ride.hospitalDetails = hospitalMap[ride.hospital];
+        rideObj.hospitalDetails = hospitalMap[ride.hospital];
       }
-    }
+
+      // Add cancellation status and details
+      rideObj.isCancelled = ride.status === 'CANCELLED';
+      rideObj.canBeCancelled = ['SEARCHING_FOR_RIDER', 'START', 'ARRIVED'].includes(ride.status);
+      
+      // Include cancellation details if ride is cancelled
+      if (rideObj.isCancelled && ride.cancellation) {
+        rideObj.cancellationDetails = {
+          cancelledBy: ride.cancellation.cancelledBy,
+          cancelledAt: ride.cancellation.cancelledAt,
+          reason: ride.cancellation.cancelReason,
+          fee: ride.cancellation.cancellationFee,
+          refundAmount: ride.fare - ride.cancellation.cancellationFee
+        };
+      }
+
+      // Add status display information
+      rideObj.statusInfo = {
+        current: ride.status,
+        canCancel: rideObj.canBeCancelled && !rideObj.isCancelled,
+        displayText: getStatusDisplayText(ride.status),
+        isActive: !['COMPLETED', 'CANCELLED'].includes(ride.status)
+      };
+
+      return rideObj;
+    }));
 
     res.status(StatusCodes.OK).json({
       message: "Emergency calls retrieved successfully",
-      count: rides.length,
-      rides,
+      count: enhancedRides.length,
+      rides: enhancedRides,
+      summary: {
+        total: enhancedRides.length,
+        active: enhancedRides.filter(r => r.statusInfo.isActive).length,
+        completed: enhancedRides.filter(r => r.status === 'COMPLETED').length,
+        cancelled: enhancedRides.filter(r => r.status === 'CANCELLED').length
+      }
     });
   } catch (error) {
     console.error("Error retrieving rides:", error);
     throw new BadRequestError("Failed to retrieve emergency calls");
   }
 };
+
+/**
+ * Helper function to get user-friendly status display text
+ * @param {string} status - The ride status
+ * @returns {string} - User-friendly status text
+ */
+function getStatusDisplayText(status) {
+  const statusMap = {
+    'SEARCHING_FOR_RIDER': 'Searching for ambulance...',
+    'START': 'Ambulance en route',
+    'ARRIVED': 'Ambulance has arrived',
+    'COMPLETED': 'Trip completed',
+    'CANCELLED': 'Trip cancelled'
+  };
+  return statusMap[status] || status;
+}
 
 export const getAvailableRides = async (req, res) => {
   try {
@@ -289,8 +340,10 @@ export const getAvailableRides = async (req, res) => {
     
     const driverId = req.user.id;
 
-    // Build query for available rides
-    const query = { status: "SEARCHING_FOR_RIDER" };
+    // Build query for available rides - only include rides searching for drivers
+    const query = { 
+      status: "SEARCHING_FOR_RIDER"
+    };
 
     // Filter by ambulance type if specified
     if (vehicle) {
@@ -501,6 +554,108 @@ export const rateRide = async (req, res) => {
   }
 };
 
+/**
+ * Get detailed information about a specific ride including cancellation details
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ */
+export const getRideDetails = async (req, res) => {
+  try {
+    const { rideId } = req.params;
+    const userId = req.user.id;
+    const userRole = req.user.role;
+
+    if (!rideId) {
+      throw new BadRequestError("Ride ID is required");
+    }
+
+    const ride = await Ride.findById(rideId)
+      .populate('customer', 'name phone')
+      .populate('rider', 'name phone');
+
+    if (!ride) {
+      throw new NotFoundError("Ride not found");
+    }
+
+    // Check if user has permission to view this ride
+    const isCustomer = ride.customer._id.toString() === userId;
+    const isRider = ride.rider && ride.rider._id.toString() === userId;
+    const isSystemUser = userRole === 'admin' || userRole === 'hospital_staff';
+
+    if (!isCustomer && !isRider && !isSystemUser) {
+      throw new UnauthenticatedError("Unauthorized to view this ride");
+    }
+
+    // Build comprehensive ride details
+    const rideDetails = {
+      ...ride.toObject(),
+      isCancelled: ride.status === 'CANCELLED',
+      canBeCancelled: ['SEARCHING_FOR_RIDER', 'START', 'ARRIVED'].includes(ride.status),
+      statusInfo: {
+        current: ride.status,
+        displayText: getStatusDisplayText(ride.status),
+        isActive: !['COMPLETED', 'CANCELLED'].includes(ride.status),
+        canCancel: ['SEARCHING_FOR_RIDER', 'START', 'ARRIVED'].includes(ride.status) && ride.status !== 'CANCELLED'
+      }
+    };
+
+    // Add cancellation details if ride is cancelled
+    if (rideDetails.isCancelled && ride.cancellation) {
+      rideDetails.cancellationDetails = {
+        cancelledBy: ride.cancellation.cancelledBy,
+        cancelledAt: ride.cancellation.cancelledAt,
+        reason: ride.cancellation.cancelReason,
+        fee: ride.cancellation.cancellationFee,
+        refundAmount: ride.fare - ride.cancellation.cancellationFee
+      };
+    }
+
+    // Add potential cancellation fee information if ride can be cancelled
+    if (rideDetails.canBeCancelled && isCustomer) {
+      let potentialFee = 0;
+      switch (ride.status) {
+        case 'SEARCHING_FOR_RIDER':
+          potentialFee = 0;
+          break;
+        case 'START':
+          potentialFee = Math.min(ride.fare * 0.1, 50);
+          break;
+        case 'ARRIVED':
+          potentialFee = Math.min(ride.fare * 0.2, 100);
+          break;
+      }
+      rideDetails.cancellationPolicy = {
+        fee: potentialFee,
+        refund: ride.fare - potentialFee,
+        description: potentialFee === 0 
+          ? 'No cancellation fee - ambulance not yet assigned' 
+          : `Cancellation fee: ₹${potentialFee} - ambulance ${ride.status.toLowerCase()}`
+      };
+    }
+
+    res.status(StatusCodes.OK).json({
+      success: true,
+      message: "Ride details retrieved successfully",
+      data: rideDetails
+    });
+
+  } catch (error) {
+    console.error('Get ride details error:', error);
+    
+    if (error instanceof BadRequestError || 
+        error instanceof NotFoundError || 
+        error instanceof UnauthenticatedError) {
+      throw error;
+    }
+    
+    res.status(StatusCodes.INTERNAL_SERVER_ERROR).json({
+      success: false,
+      message: 'Failed to retrieve ride details',
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+    });
+  }
+};
+
 export const getAllAvailableRides = async (req, res) => {
   try {
     const rides = await Ride.find({ status: "SEARCHING_FOR_RIDER" })
@@ -708,6 +863,273 @@ export const verifyPickup = async (req, res) => {
       success: false,
       error: "Server error",
       message: "Failed to verify pickup"
+    });
+  }
+};
+
+/**
+ * Cancel a ride with proper business logic and fee calculation
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ */
+export const cancelRide = async (req, res) => {
+  try {
+    const { rideId } = req.params;
+    const { reason } = req.body;
+    const userId = req.user.id;
+    const userRole = req.user.role;
+
+    if (!rideId) {
+      throw new BadRequestError("Ride ID is required");
+    }
+
+    // Find the ride with populated customer and rider details
+    const ride = await Ride.findById(rideId)
+      .populate('customer', 'name phone')
+      .populate('rider', 'name phone');
+
+    if (!ride) {
+      throw new NotFoundError("Ride not found");
+    }
+
+    // Check if user has permission to cancel this ride
+    const isCustomer = ride.customer._id.toString() === userId;
+    const isRider = ride.rider && ride.rider._id.toString() === userId;
+    const isSystemUser = userRole === 'admin' || userRole === 'hospital_staff';
+
+    if (!isCustomer && !isRider && !isSystemUser) {
+      throw new UnauthenticatedError("Unauthorized to cancel this ride");
+    }
+
+    // Check if ride can be cancelled
+    const cancellableStatuses = ['SEARCHING_FOR_RIDER', 'START', 'ARRIVED'];
+    if (!cancellableStatuses.includes(ride.status)) {
+      throw new BadRequestError(
+        `Ride cannot be cancelled. Current status: ${ride.status}. Only rides with status ${cancellableStatuses.join(', ')} can be cancelled.`
+      );
+    }
+
+    // Check if ride is already cancelled
+    if (ride.status === 'CANCELLED') {
+      throw new BadRequestError("Ride is already cancelled");
+    }
+
+    // Determine who is cancelling
+    let cancelledBy = 'system';
+    if (isCustomer) cancelledBy = 'patient';
+    else if (isRider) cancelledBy = 'driver';
+
+    // Calculate cancellation fee based on business rules
+    let cancellationFee = 0;
+    const baseRate = ride.fare;
+
+    // Fee calculation logic based on ride status and cancellation actor
+    if (cancelledBy === 'patient') {
+      switch (ride.status) {
+        case 'SEARCHING_FOR_RIDER':
+          cancellationFee = 0; // No fee if no driver assigned
+          break;
+        case 'START':
+          cancellationFee = Math.min(baseRate * 0.1, 50); // 10% of fare, max ₹50
+          break;
+        case 'ARRIVED':
+          cancellationFee = Math.min(baseRate * 0.2, 100); // 20% of fare, max ₹100
+          break;
+      }
+    } else if (cancelledBy === 'driver') {
+      // Driver cancellation - no fee for patient, but track for driver rating
+      cancellationFee = 0;
+    }
+
+    // Update ride with cancellation details
+    ride.status = 'CANCELLED';
+    ride.cancellation = {
+      cancelledBy,
+      cancelledAt: new Date(),
+      cancelReason: reason || `Cancelled by ${cancelledBy}`,
+      cancellationFee
+    };
+
+    await ride.save();
+
+    // Emit socket event for real-time updates
+    if (req.io) {
+      req.io.to(`ride_${rideId}`).emit('rideCancelled', {
+        rideId: ride._id,
+        status: 'CANCELLED',
+        cancelledBy,
+        cancelReason: ride.cancellation.cancelReason,
+        cancellationFee,
+        timestamp: ride.cancellation.cancelledAt
+      });
+
+      // Notify the other party
+      if (cancelledBy === 'patient' && ride.rider) {
+        req.io.to(`user_${ride.rider._id}`).emit('rideNotification', {
+          type: 'ride_cancelled_by_patient',
+          title: 'Ride Cancelled',
+          message: `Patient has cancelled the ride to ${ride.drop.address}`,
+          rideId: ride._id,
+          data: { cancellationFee, reason: ride.cancellation.cancelReason }
+        });
+      } else if (cancelledBy === 'driver' && ride.customer) {
+        req.io.to(`user_${ride.customer._id}`).emit('rideNotification', {
+          type: 'ride_cancelled_by_driver',
+          title: 'Ride Cancelled',
+          message: `Driver has cancelled your ride. We're finding you another ambulance.`,
+          rideId: ride._id,
+          data: { reason: ride.cancellation.cancelReason }
+        });
+      }
+    }
+
+    // Calculate refund amount
+    const refundAmount = Math.max(baseRate - cancellationFee, 0);
+
+    // Log cancellation for analytics
+    console.log(`Ride ${rideId} cancelled by ${cancelledBy}. Fee: ₹${cancellationFee}, Refund: ₹${refundAmount}`);
+
+    res.status(StatusCodes.OK).json({
+      success: true,
+      message: 'Ride cancelled successfully',
+      data: {
+        rideId: ride._id,
+        status: 'CANCELLED',
+        cancellationDetails: {
+          cancelledBy,
+          cancelledAt: ride.cancellation.cancelledAt,
+          reason: ride.cancellation.cancelReason,
+          cancellationFee,
+          refundAmount,
+          originalFare: baseRate
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('Cancel ride error:', error);
+    
+    if (error instanceof BadRequestError || 
+        error instanceof NotFoundError || 
+        error instanceof UnauthenticatedError) {
+      throw error;
+    }
+    
+    res.status(StatusCodes.INTERNAL_SERVER_ERROR).json({
+      success: false,
+      message: 'Failed to cancel ride',
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+    });
+  }
+};
+
+/**
+ * Check if a ride can be cancelled and calculate potential fees
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ */
+export const canCancelRide = async (req, res) => {
+  try {
+    const { rideId } = req.params;
+    const userId = req.user.id;
+    const userRole = req.user.role;
+
+    if (!rideId) {
+      throw new BadRequestError("Ride ID is required");
+    }
+
+    const ride = await Ride.findById(rideId)
+      .populate('customer', 'name')
+      .populate('rider', 'name');
+
+    if (!ride) {
+      throw new NotFoundError("Ride not found");
+    }
+
+    // Check user permission
+    const isCustomer = ride.customer._id.toString() === userId;
+    const isRider = ride.rider && ride.rider._id.toString() === userId;
+    const isSystemUser = userRole === 'admin' || userRole === 'hospital_staff';
+
+    if (!isCustomer && !isRider && !isSystemUser) {
+      throw new UnauthenticatedError("Unauthorized to check cancellation status for this ride");
+    }
+
+    // Check if ride can be cancelled
+    const cancellableStatuses = ['SEARCHING_FOR_RIDER', 'START', 'ARRIVED'];
+    const canCancel = cancellableStatuses.includes(ride.status) && ride.status !== 'CANCELLED';
+
+    let cancellationFee = 0;
+    let reason = null;
+
+    if (!canCancel) {
+      switch (ride.status) {
+        case 'CANCELLED':
+          reason = 'Ride is already cancelled';
+          break;
+        case 'COMPLETED':
+          reason = 'Completed rides cannot be cancelled';
+          break;
+        default:
+          reason = `Rides with status '${ride.status}' cannot be cancelled`;
+      }
+    } else {
+      // Calculate potential cancellation fee for customer
+      if (isCustomer) {
+        const baseRate = ride.fare;
+        switch (ride.status) {
+          case 'SEARCHING_FOR_RIDER':
+            cancellationFee = 0;
+            break;
+          case 'START':
+            cancellationFee = Math.min(baseRate * 0.1, 50);
+            break;
+          case 'ARRIVED':
+            cancellationFee = Math.min(baseRate * 0.2, 100);
+            break;
+        }
+      }
+    }
+
+    // Provide cancellation policy information
+    const cancellationPolicy = {
+      'SEARCHING_FOR_RIDER': 'No cancellation fee - ambulance not yet assigned',
+      'START': 'Cancellation fee: 10% of fare (max ₹50) - ambulance en route',
+      'ARRIVED': 'Cancellation fee: 20% of fare (max ₹100) - ambulance has arrived'
+    };
+
+    res.status(StatusCodes.OK).json({
+      success: true,
+      data: {
+        rideId: ride._id,
+        canCancel,
+        currentStatus: ride.status,
+        cancellationFee,
+        potentialRefund: canCancel ? Math.max(ride.fare - cancellationFee, 0) : 0,
+        reason,
+        policy: cancellationPolicy[ride.status] || 'Standard cancellation policy applies',
+        rideDetails: {
+          pickup: ride.pickup.address,
+          drop: ride.drop.address,
+          originalFare: ride.fare,
+          vehicle: ride.vehicle
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('Can cancel ride error:', error);
+    
+    if (error instanceof BadRequestError || 
+        error instanceof NotFoundError || 
+        error instanceof UnauthenticatedError) {
+      throw error;
+    }
+    
+    res.status(StatusCodes.INTERNAL_SERVER_ERROR).json({
+      success: false,
+      message: 'Failed to check cancellation status',
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
     });
   }
 };

@@ -20,7 +20,7 @@ const rideSchema = new Schema(
     customer: { type: Schema.Types.ObjectId, ref: "User", required: true },
     rider: { type: Schema.Types.ObjectId, ref: "User", default: null },
     status: { type: String,
-      enum: ["SEARCHING_FOR_RIDER", "START", "ARRIVED", "COMPLETED"],
+      enum: ["SEARCHING_FOR_RIDER", "START", "ARRIVED", "COMPLETED", "CANCELLED"],
       default: "SEARCHING_FOR_RIDER",
     },
     otp: { type: String, default: null },
@@ -55,6 +55,25 @@ const rideSchema = new Schema(
         relationship: { type: String, default: null }
       },
       specialInstructions: { type: String, default: null }
+    },
+    cancellation: {
+      cancelledBy: {
+        type: String,
+        enum: ['patient', 'driver', 'system'],
+        default: null
+      },
+      cancelledAt: {
+        type: Date,
+        default: null
+      },
+      cancelReason: {
+        type: String,
+        default: null
+      },
+      cancellationFee: {
+        type: Number,
+        default: 0
+      }
     },
   },
   { timestamps: true }
