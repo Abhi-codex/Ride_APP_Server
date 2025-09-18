@@ -577,9 +577,9 @@ export const getRideDetails = async (req, res) => {
       throw new NotFoundError("Ride not found");
     }
 
-    // Check if user has permission to view this ride
-    const isCustomer = ride.customer._id.toString() === userId;
-    const isRider = ride.rider && ride.rider._id.toString() === userId;
+    // Check if user has permission to view this ride - use proper ObjectId comparison
+    const isCustomer = ride.customer._id.equals(userId);
+    const isRider = ride.rider && ride.rider._id.equals(userId);
     const isSystemUser = userRole === 'admin' || userRole === 'hospital_staff';
 
     if (!isCustomer && !isRider && !isSystemUser) {
@@ -892,9 +892,9 @@ export const cancelRide = async (req, res) => {
       throw new NotFoundError("Ride not found");
     }
 
-    // Check if user has permission to cancel this ride
-    const isCustomer = ride.customer._id.toString() === userId;
-    const isRider = ride.rider && ride.rider._id.toString() === userId;
+    // Check if user has permission to cancel this ride - use proper ObjectId comparison
+    const isCustomer = ride.customer._id.equals(userId);
+    const isRider = ride.rider && ride.rider._id.equals(userId);
     const isSystemUser = userRole === 'admin' || userRole === 'hospital_staff';
 
     if (!isCustomer && !isRider && !isSystemUser) {
@@ -1046,9 +1046,9 @@ export const canCancelRide = async (req, res) => {
       throw new NotFoundError("Ride not found");
     }
 
-    // Check user permission
-    const isCustomer = ride.customer._id.toString() === userId;
-    const isRider = ride.rider && ride.rider._id.toString() === userId;
+    // Check user permission - use proper ObjectId comparison
+    const isCustomer = ride.customer._id.equals(userId);
+    const isRider = ride.rider && ride.rider._id.equals(userId);
     const isSystemUser = userRole === 'admin' || userRole === 'hospital_staff';
 
     if (!isCustomer && !isRider && !isSystemUser) {
