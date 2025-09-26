@@ -184,6 +184,15 @@ export const acceptRide = async (req, res) => {
     if (req.io && typeof req.io.to === 'function') {
       req.io.to(`ride_${rideId}`).emit("rideUpdate", ride);
       req.io.to(`ride_${rideId}`).emit("rideAccepted");
+
+      // Notify the customer that their ride was accepted
+      req.io.to(`user_${ride.customer._id}`).emit('rideNotification', {
+        type: 'ride_accepted',
+        title: 'Ride Accepted',
+        message: 'An ambulance has been assigned to your emergency call and is on the way.',
+        rideId: ride._id,
+        data: { status: 'START', rider: ride.rider }
+      });
     } else {
       console.log('WARNING: req.io.to is not available, skipping socket events');
     }
@@ -223,6 +232,25 @@ export const updateRideStatus = async (req, res) => {
     // Emit socket event for real-time updates
     if (req.io && typeof req.io.to === 'function') {
       req.io.to(`ride_${rideId}`).emit("rideUpdate", ride);
+
+      // Send specific notifications for important status changes
+      if (status === 'PICKUP_COMPLETE') {
+        req.io.to(`user_${ride.customer._id}`).emit('rideNotification', {
+          type: 'pickup_completed',
+          title: 'Patient Picked Up',
+          message: 'Your ambulance has picked up the patient and is en route to the destination.',
+          rideId: ride._id,
+          data: { status: 'PICKUP_COMPLETE' }
+        });
+      } else if (status === 'DROPOFF_COMPLETE') {
+        req.io.to(`user_${ride.customer._id}`).emit('rideNotification', {
+          type: 'dropoff_completed',
+          title: 'Ride Completed',
+          message: 'Your ambulance ride has been completed successfully.',
+          rideId: ride._id,
+          data: { status: 'DROPOFF_COMPLETE' }
+        });
+      }
     } else {
       console.log('WARNING: req.io not available in updateRideStatus, skipping socket events');
     }

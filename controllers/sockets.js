@@ -96,6 +96,10 @@ const handleSocketConnection = (io) => {
     const user = socket.user;
     console.log(`User Joined: ${user.id} (${user.role})`);
 
+    // Join user-specific room for notifications
+    socket.join(`user_${user.id}`);
+    console.log(`User ${user.id} joined user room: user_${user.id}`);
+
     if (user.role === "driver") {
       socket.on("goOnDuty", (coords) => {
         onDutyDrivers.set(user.id, { socketId: socket.id, coords });
