@@ -15,11 +15,6 @@ import {
 
 const router = express.Router();
 
-router.use((req, res, next) => {
-  req.io = req.app.get("io");
-  next();
-});
-
 router.post("/create", auth, createRide);
 router.patch("/accept/:rideId", auth, requireRole('driver'), acceptRide);
 router.patch("/update/:rideId", auth, updateRideStatus);

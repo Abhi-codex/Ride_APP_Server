@@ -20,7 +20,7 @@ const rideSchema = new Schema(
     customer: { type: Schema.Types.ObjectId, ref: "User", required: true },
     rider: { type: Schema.Types.ObjectId, ref: "User", default: null },
     status: { type: String,
-      enum: ["SEARCHING_FOR_RIDER", "START", "ARRIVED", "COMPLETED", "CANCELLED"],
+      enum: ["SEARCHING_FOR_RIDER", "START", "ARRIVED", "PICKUP_COMPLETE", "DROPOFF_COMPLETE", "COMPLETED", "CANCELLED"],
       default: "SEARCHING_FOR_RIDER",
     },
     otp: { type: String, default: null },

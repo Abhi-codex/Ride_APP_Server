@@ -213,14 +213,19 @@ export const updateRideStatus = async (req, res) => {
       throw new NotFoundError("Emergency call not found");
     }
 
-    if (!["START", "ARRIVED", "COMPLETED", "CANCELLED"].includes(status)) {
+    if (!["START", "ARRIVED", "PICKUP_COMPLETE", "DROPOFF_COMPLETE", "COMPLETED", "CANCELLED"].includes(status)) {
       throw new BadRequestError("Invalid emergency call status");
     }
 
     ride.status = status;
     await ride.save();
 
-    req.io.to(`ride_${rideId}`).emit("rideUpdate", ride);
+    // Emit socket event for real-time updates
+    if (req.io && typeof req.io.to === 'function') {
+      req.io.to(`ride_${rideId}`).emit("rideUpdate", ride);
+    } else {
+      console.log('WARNING: req.io not available in updateRideStatus, skipping socket events');
+    }
 
     res.status(StatusCodes.OK).json({
       message: `Emergency call status updated to ${status}`,
@@ -267,7 +272,7 @@ export const getMyRides = async (req, res) => {
 
       // Add cancellation status and details
       rideObj.isCancelled = ride.status === 'CANCELLED';
-      rideObj.canBeCancelled = ['SEARCHING_FOR_RIDER', 'START', 'ARRIVED'].includes(ride.status);
+      rideObj.canBeCancelled = ['SEARCHING_FOR_RIDER', 'START', 'ARRIVED', 'PICKUP_COMPLETE'].includes(ride.status);
       
       // Include cancellation details if ride is cancelled
       if (rideObj.isCancelled && ride.cancellation) {
@@ -318,6 +323,8 @@ function getStatusDisplayText(status) {
     'SEARCHING_FOR_RIDER': 'Searching for ambulance...',
     'START': 'Ambulance en route',
     'ARRIVED': 'Ambulance has arrived',
+    'PICKUP_COMPLETE': 'Patient picked up - en route to destination',
+    'DROPOFF_COMPLETE': 'Arrived at destination',
     'COMPLETED': 'Trip completed',
     'CANCELLED': 'Trip cancelled'
   };
@@ -595,7 +602,7 @@ export const getRideDetails = async (req, res) => {
         current: ride.status,
         displayText: getStatusDisplayText(ride.status),
         isActive: !['COMPLETED', 'CANCELLED'].includes(ride.status),
-        canCancel: ['SEARCHING_FOR_RIDER', 'START', 'ARRIVED'].includes(ride.status) && ride.status !== 'CANCELLED'
+        canCancel: ['SEARCHING_FOR_RIDER', 'START', 'ARRIVED', 'PICKUP_COMPLETE'].includes(ride.status) && ride.status !== 'CANCELLED'
       }
     };
 
@@ -622,6 +629,9 @@ export const getRideDetails = async (req, res) => {
           break;
         case 'ARRIVED':
           potentialFee = Math.min(ride.fare * 0.2, 100);
+          break;
+        case 'PICKUP_COMPLETE':
+          potentialFee = Math.min(ride.fare * 0.25, 150);
           break;
       }
       rideDetails.cancellationPolicy = {
@@ -708,7 +718,7 @@ export const cancelRide = async (req, res) => {
     }
 
     // Check if ride can be cancelled
-    const cancellableStatuses = ['SEARCHING_FOR_RIDER', 'START', 'ARRIVED'];
+    const cancellableStatuses = ['SEARCHING_FOR_RIDER', 'START', 'ARRIVED', 'PICKUP_COMPLETE'];
     if (!cancellableStatuses.includes(ride.status)) {
       throw new BadRequestError(
         `Ride cannot be cancelled. Current status: ${ride.status}. Only rides with status ${cancellableStatuses.join(', ')} can be cancelled.`
@@ -740,6 +750,9 @@ export const cancelRide = async (req, res) => {
           break;
         case 'ARRIVED':
           cancellationFee = Math.min(baseRate * 0.2, 100); // 20% of fare, max ₹100
+          break;
+        case 'PICKUP_COMPLETE':
+          cancellationFee = Math.min(baseRate * 0.25, 150); // 25% of fare, max ₹150
           break;
       }
     } else if (cancelledBy === 'driver') {
@@ -862,7 +875,7 @@ export const canCancelRide = async (req, res) => {
     }
 
     // Check if ride can be cancelled
-    const cancellableStatuses = ['SEARCHING_FOR_RIDER', 'START', 'ARRIVED'];
+    const cancellableStatuses = ['SEARCHING_FOR_RIDER', 'START', 'ARRIVED', 'PICKUP_COMPLETE'];
     const canCancel = cancellableStatuses.includes(ride.status) && ride.status !== 'CANCELLED';
 
     let cancellationFee = 0;
@@ -893,6 +906,9 @@ export const canCancelRide = async (req, res) => {
           case 'ARRIVED':
             cancellationFee = Math.min(baseRate * 0.2, 100);
             break;
+          case 'PICKUP_COMPLETE':
+            cancellationFee = Math.min(baseRate * 0.25, 150);
+            break;
         }
       }
     }
@@ -901,7 +917,8 @@ export const canCancelRide = async (req, res) => {
     const cancellationPolicy = {
       'SEARCHING_FOR_RIDER': 'No cancellation fee - ambulance not yet assigned',
       'START': 'Cancellation fee: 10% of fare (max ₹50) - ambulance en route',
-      'ARRIVED': 'Cancellation fee: 20% of fare (max ₹100) - ambulance has arrived'
+      'ARRIVED': 'Cancellation fee: 20% of fare (max ₹100) - ambulance has arrived',
+      'PICKUP_COMPLETE': 'Cancellation fee: 25% of fare (max ₹150) - patient picked up, en route to destination'
     };
 
     res.status(StatusCodes.OK).json({
