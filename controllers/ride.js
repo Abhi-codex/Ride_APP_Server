@@ -77,7 +77,7 @@ export const createRide = async (req, res) => {
       if (result && result.hospitals && result.hospitals.length > 0) {
         hospitalDetails = result.hospitals[0];
       }
-    } catch (err) {
+    } catch {
       // Fallback to DB if API fails
       const Hospital = (await import("../models/Hospital.js")).default;
       const dbHospitals = await Hospital.find({});
@@ -673,200 +673,6 @@ export const getAllAvailableRides = async (req, res) => {
   }
 };
 
-// OTP verification attempts tracking (in production, use Redis or database)
-const otpVerificationAttempts = new Map();
-
-// Clean expired OTP attempts
-const cleanExpiredOtpAttempts = () => {
-  const now = Date.now();
-  for (const [key, data] of otpVerificationAttempts.entries()) {
-    if (now > data.resetTime) {
-      otpVerificationAttempts.delete(key);
-    }
-  }
-};
-
-// Check if OTP verification is rate limited
-const isOtpRateLimited = (rideId) => {
-  cleanExpiredOtpAttempts();
-  const attempts = otpVerificationAttempts.get(rideId);
-  if (!attempts) return false;
-  
-  return attempts.count >= 5; // Max 5 attempts per 10 minutes
-};
-
-// Track OTP verification attempt
-const trackOtpAttempt = (rideId) => {
-  cleanExpiredOtpAttempts();
-  const now = Date.now();
-  const resetTime = now + 10 * 60 * 1000; // 10 minutes
-  
-  const attempts = otpVerificationAttempts.get(rideId);
-  if (attempts) {
-    attempts.count++;
-  } else {
-    otpVerificationAttempts.set(rideId, { count: 1, resetTime });
-  }
-};
-
-export const verifyPickup = async (req, res) => {
-  try {
-    const { rideId, otp, driverLocation } = req.body;
-    const driverId = req.user.id;
-
-    // Validate required fields
-    if (!rideId || !otp || !driverLocation?.latitude || !driverLocation?.longitude) {
-      throw new BadRequestError("Ride ID, OTP, and driver location are required");
-    }
-
-    // Check rate limiting for OTP verification
-    if (isOtpRateLimited(rideId)) {
-      return res.status(StatusCodes.TOO_MANY_REQUESTS).json({
-        success: false,
-        error: "Rate limit exceeded",
-        message: "Too many OTP verification attempts. Please try again later."
-      });
-    }
-
-    // Find the ride
-    const ride = await Ride.findById(rideId)
-      .populate("customer", "name phone")
-      .populate("rider", "name phone");
-
-    if (!ride) {
-      throw new NotFoundError("Ride not found");
-    }
-
-    // Verify that the driver is assigned to this ride
-    if (!ride.rider || ride.rider._id.toString() !== driverId) {
-      throw new UnauthenticatedError("You are not assigned to this ride");
-    }
-
-    // Check if ride is in correct status
-    if (ride.status !== "START") {
-      throw new BadRequestError("Ride must be in START status to verify pickup");
-    }
-
-    // Check if OTP has expired (assuming 10 minutes validity)
-    const otpCreatedTime = ride.updatedAt; // Assuming OTP was created when ride status changed to START
-    const otpExpiryTime = new Date(otpCreatedTime.getTime() + 10 * 60 * 1000); // 10 minutes
-    const now = new Date();
-
-    if (now > otpExpiryTime) {
-      trackOtpAttempt(rideId);
-      return res.status(StatusCodes.BAD_REQUEST).json({
-        success: false,
-        error: "OTP expired",
-        message: "The OTP has expired. Please contact the patient for a new OTP."
-      });
-    }
-
-    // Verify OTP
-    if (ride.otp !== otp) {
-      trackOtpAttempt(rideId);
-      return res.status(StatusCodes.BAD_REQUEST).json({
-        success: false,
-        error: "Invalid OTP",
-        message: "The provided OTP is incorrect"
-      });
-    }
-
-    // Calculate distance between driver location and pickup location
-    const distanceToPickup = calculateDistance(
-      driverLocation.latitude,
-      driverLocation.longitude,
-      ride.pickup.latitude,
-      ride.pickup.longitude
-    );
-
-    // Check if driver is within 100 meters (0.1 km) of pickup location
-    const maxAllowedDistance = 0.1; // 100 meters in kilometers
-    if (distanceToPickup > maxAllowedDistance) {
-      trackOtpAttempt(rideId);
-      return res.status(StatusCodes.BAD_REQUEST).json({
-        success: false,
-        error: "Location verification failed",
-        message: "Driver is not at the pickup location",
-        details: {
-          distanceToPickup: Math.round(distanceToPickup * 1000), // distance in meters
-          requiredDistance: Math.round(maxAllowedDistance * 1000) // required distance in meters
-        }
-      });
-    }
-
-    // All verifications passed - update ride status
-    ride.status = "ARRIVED";
-    
-    // Update driver location in live tracking
-    if (!ride.liveTracking) {
-      ride.liveTracking = {};
-    }
-    ride.liveTracking.driverLocation = {
-      latitude: driverLocation.latitude,
-      longitude: driverLocation.longitude
-    };
-    ride.liveTracking.lastUpdated = new Date();
-
-    await ride.save();
-
-    // Emit socket event for real-time updates
-    if (req.io) {
-      req.io.to(`ride_${rideId}`).emit("rideUpdate", {
-        rideId: ride._id,
-        status: ride.status,
-        message: "Pickup verified successfully",
-        driverLocation: ride.liveTracking.driverLocation
-      });
-
-      // Notify patient about successful pickup verification
-      req.io.to(`user_${ride.customer._id}`).emit("pickupVerified", {
-        rideId: ride._id,
-        driverName: ride.rider.name,
-        message: "Your driver has arrived and pickup has been verified"
-      });
-    }
-
-    // Clear OTP verification attempts for this ride
-    otpVerificationAttempts.delete(rideId);
-
-    // Log verification for audit trail
-    console.log(`Pickup verified successfully for ride ${rideId} by driver ${driverId} at ${new Date().toISOString()}`);
-
-    res.status(StatusCodes.OK).json({
-      success: true,
-      message: "Pickup verified successfully",
-      ride: {
-        _id: ride._id,
-        status: ride.status,
-        customer: ride.customer,
-        rider: ride.rider,
-        pickup: ride.pickup,
-        drop: ride.drop,
-        emergency: ride.emergency,
-        liveTracking: ride.liveTracking,
-        destinationHospital: ride.destinationHospital
-      }
-    });
-
-  } catch (error) {
-    console.error("Error verifying pickup:", error);
-    
-    // Handle different types of errors
-    if (error instanceof BadRequestError || 
-        error instanceof NotFoundError || 
-        error instanceof UnauthenticatedError) {
-      throw error;
-    }
-    
-    // For unexpected errors
-    res.status(StatusCodes.INTERNAL_SERVER_ERROR).json({
-      success: false,
-      error: "Server error",
-      message: "Failed to verify pickup"
-    });
-  }
-};
-
 /**
  * Cancel a ride with proper business logic and fee calculation
  * @param {Object} req - Express request object
@@ -995,7 +801,7 @@ export const cancelRide = async (req, res) => {
       data: {
         rideId: ride._id,
         status: 'CANCELLED',
-        cancellationDetails: {
+        cancellationDetails: {  
           cancelledBy,
           cancelledAt: ride.cancellation.cancelledAt,
           reason: ride.cancellation.cancelReason,

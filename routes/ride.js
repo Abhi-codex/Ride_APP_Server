@@ -8,7 +8,6 @@ import {
   getMyRides, 
   getAvailableRides, 
   rateRide, 
-  verifyPickup,
   cancelRide,
   canCancelRide,
   getRideDetails
@@ -27,7 +26,6 @@ router.patch("/update/:rideId", auth, updateRideStatus);
 router.get("/rides", auth, getMyRides);
 router.get("/driverrides", auth, requireRole('driver'), getAvailableRides);
 router.patch("/rate/:rideId", auth, rateRide);
-router.post("/verify-pickup", auth, requireRole('driver'), verifyPickup);
 
 // Ride details route
 router.get("/:rideId", auth, getRideDetails);
