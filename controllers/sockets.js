@@ -9,8 +9,21 @@ const onDutyDrivers = new Map();
 const handleSocketConnection = (io) => {
   io.use(async (socket, next) => {
     try {
-      const token = socket.handshake.headers.access_token;
-      if (!token) return next(new Error("Authentication invalid: No token"));
+      // Check multiple locations for the token
+      let token = socket.handshake.headers.access_token || // HTTP header
+                  socket.handshake.headers.authorization?.replace('Bearer ', '') || // Bearer token
+                  socket.handshake.auth?.token || // Socket.IO auth object
+                  socket.handshake.auth?.access_token || // Alternative auth object
+                  socket.handshake.query?.token || // Query parameter
+                  socket.handshake.query?.access_token; // Alternative query parameter
+
+      if (!token) {
+        console.log('Socket auth failed: No token found in any location');
+        console.log('Headers:', Object.keys(socket.handshake.headers));
+        console.log('Auth:', socket.handshake.auth);
+        console.log('Query:', socket.handshake.query);
+        return next(new Error("Authentication invalid: No token"));
+      }
 
       const payload = jwt.verify(token, process.env.ACCESS_TOKEN_SECRET);
       const user = await User.findById(payload.id);
