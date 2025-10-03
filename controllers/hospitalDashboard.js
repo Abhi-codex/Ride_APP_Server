@@ -172,7 +172,13 @@ export const getIncomingPatients = async (req, res) => {
 
     // =================================================================
     // TODO: THIS IS A TEMPORARY WORKAROUND FOR TESTING.
-    // ... (comment from before) ...  instead of name we have to use hospital id refer prev version
+    // We are searching by the hospital's NAME in the 'drop.address' field.
+    // This is not reliable and should be changed in the future.
+    //
+    // IN THE FUTURE, THIS MUST BE CHANGED BACK TO SEARCH BY ID:
+    // 'destinationHospital.hospitalId': hospitalId,
+    //
+    // This can be done after the "create ride" controller bug is fixed.
     // =================================================================
     const incomingRides = await Ride.find({
       'drop.address': hospitalNameRegex,
