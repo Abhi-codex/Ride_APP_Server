@@ -164,6 +164,8 @@ export const updateHospitalInfo = async (req, res) => {
 
 // In controllers/hospitalDashboard.js
 
+// in controllers/hospitalDashboard.js
+
 export const getIncomingPatients = async (req, res) => {
   try {
     const hospitalName = req.user.staffMember.hospitalId.name;
@@ -172,52 +174,43 @@ export const getIncomingPatients = async (req, res) => {
     // =================================================================
     // TODO: Temporary name search. Change back to ID search later.
     // =================================================================
-
-    // FINAL FIX: Instead of looking for specific active statuses, we will
-    // now get all rides that are NOT in a "finished" state. This is more reliable.
     const incomingRides = await Ride.find({
       'drop.address': hospitalNameRegex,
-      status: { $nin: ["COMPLETED", "CANCELLED"] } // $nin means "not in"
-    })
-    .populate('customer', 'name phone')
-    .populate({ 
+      status: { $nin: ["COMPLETED", "CANCELLED"] }
+    }).populate('customer', 'name phone').populate({ 
         path: 'rider', 
         populate: { 
-            path: 'user',
+            path: 'user', 
             model: 'User',
             select: 'name phone' 
         } 
-    })
-    .sort({ createdAt: -1 })
-    .limit(50);
+    }).sort({ createdAt: -1 }).limit(50);
 
     if (!incomingRides || incomingRides.length === 0) {
-      return res.status(StatusCodes.OK).json({ success: true, count: 0, patients: [], message: "No incoming patients at this time" });
+      return res.status(StatusCodes.OK).json({ success: true, count: 0, patients: [] });
     }
 
     const formattedPatients = incomingRides.map(ride => {
-      const eta = ride.destinationHospital?.estimatedArrival || new Date(Date.now() + 30 * 60000);
-      const timeToArrival = Math.max(0, Math.floor((eta - new Date()) / 60000));
+      const timeToArrival = ride.destinationHospital?.estimatedArrival ? Math.max(0, Math.floor((new Date(ride.destinationHospital.estimatedArrival) - new Date()) / 60000)) : 30;
       return {
-        rideId: ride._id,
+        rideId: ride._id,
         patient: { name: ride.customer?.name || "N/A", phone: ride.customer?.phone || "N/A" },
-        contactInfo: { relative: ride.contactInfo?.patientRelative || { name: 'N/A', phone: 'N/A' }, specialInstructions: ride.contactInfo?.specialInstructions || 'None' },
-        condition: { priority: ride.emergency?.priority || 'medium', description: ride.emergency?.name || 'N/A' },
+        contactInfo: { relative: ride.contactInfo?.patientRelative, specialInstructions: ride.contactInfo?.specialInstructions },
+        condition: { priority: ride.emergency?.priority, description: ride.emergency?.name },
         timeToArrival,
-        distance: ride.distance ? `${ride.distance.toFixed(1)} km` : 'N/A',
+        distance: ride.distance,
         ambulanceId: `AMB-${ride._id.toString().slice(-6).toUpperCase()}`,
         ambulance: {
           driver: ride.rider?.user ? { name: ride.rider.user.name, phone: ride.rider.user.phone } : null,
           currentLocation: ride.liveTracking?.currentLocation,
-          type: ride.vehicle || 'N/A',
-          plateNumber: ride.rider?.vehicle?.plateNumber || 'N/A'
+          type: ride.vehicle,
+          plateNumber: ride.rider?.vehicle?.plateNumber
         },
         createdAt: ride.createdAt,
         status: ride.status,
-        pickup: { address: ride.pickup?.address || 'N/A' }
+        pickup: ride.pickup // This sends the whole pickup object, including coordinates
       };
     });
-
     res.status(StatusCodes.OK).json({ success: true, count: formattedPatients.length, patients: formattedPatients });
   } catch (error) {
     console.error(`Incoming patients error:`, error.message);
