@@ -162,20 +162,47 @@ export const updateHospitalInfo = async (req, res) => {
   }
 };
 
+// A special debugging version of this function
 export const getIncomingPatients = async (req, res) => {
   try {
     const hospitalId = req.user.staffMember.hospitalId._id;
-    const incomingRides = await Ride.find({ 'destinationHospital.hospitalId': hospitalId, status: { $in: ["SEARCHING_FOR_RIDER", "START", "ARRIVED"] } }).populate('customer', 'name phone').populate({ path: 'rider', populate: { path: 'user', select: 'name phone' } }).sort({ 'emergency.priority': -1, createdAt: -1 }).limit(50);
-    if (!incomingRides || incomingRides.length === 0) { return res.status(StatusCodes.OK).json({ success: true, count: 0, patients: [], message: "No incoming patients at this time" }); }
+    
+    // --- NEW DEBUG LOGS ---
+    console.log('--- DEBUGGING INCOMING PATIENTS ---');
+    console.log(`[INFO] Dashboard is searching for rides for Hospital ID: ${hospitalId}`);
+
+    // This is the original query the dashboard uses
+    const incomingRides = await Ride.find({
+      'destinationHospital.hospitalId': hospitalId,
+      status: { $in: ["SEARCHING_FOR_RIDER", "START", "ARRIVED"] }
+    });
+    console.log(`[RESULT] The original query found ${incomingRides.length} matching rides.`);
+
+    // This second query will find ALL recent active rides, to help us compare
+    const allRecentActiveRides = await Ride.find({
+        status: { $in: ["SEARCHING_FOR_RIDER", "START", "ARRIVED"] }
+    }).sort({ createdAt: -1 }).limit(5); // Get the last 5 active rides
+    
+    console.log('[COMPARISON] For comparison, here are the details of the 5 most recent active rides in the database:');
+    console.log(JSON.stringify(allRecentActiveRides, null, 2)); // Print in a readable format
+    console.log('--- END OF DEBUG ---');
+    // --- END OF DEBUG LOGS ---
+
+    // The rest of the function continues as normal, returning the (likely empty) result
+    if (!incomingRides || incomingRides.length === 0) { 
+      return res.status(StatusCodes.OK).json({ success: true, count: 0, patients: [], message: "No incoming patients at this time" }); 
+    }
+    
+    // Original formatting logic...
     const formattedPatients = incomingRides.map(ride => {
-      const eta = ride.destinationHospital?.estimatedArrival || new Date(Date.now() + 30 * 60000);
-      const timeToArrival = Math.max(0, Math.floor((eta - new Date()) / 60000));
-      return { id: ride._id, ambulanceId: `AMB-${ride._id.toString().slice(-6).toUpperCase()}`, patient: { name: ride.customer?.name || "Emergency Patient", phone: ride.customer?.phone || null, relative: ride.contactInfo?.patientRelative || null }, condition: { type: ride.emergency?.type || 'general', priority: ride.emergency?.priority || 'medium', description: ride.emergency?.name || 'Medical Emergency', specialInstructions: ride.contactInfo?.specialInstructions || null }, timeToArrival, ambulance: { type: (ride.vehicle || 'standard').toUpperCase(), status: ride.status, driver: ride.rider?.user ? { name: ride.rider.user.name, phone: ride.rider.user.phone } : null, currentLocation: ride.liveTracking?.currentLocation || null }, pickup: { address: ride.pickup?.address || 'Unknown location' } };
+        const eta = ride.destinationHospital?.estimatedArrival || new Date(Date.now() + 30 * 60000);
+        const timeToArrival = Math.max(0, Math.floor((eta - new Date()) / 60000));
+        return { id: ride._id, ambulanceId: `AMB-${ride._id.toString().slice(-6).toUpperCase()}`, patient: { name: ride.customer?.name || "Emergency Patient", phone: ride.customer?.phone || null, relative: ride.contactInfo?.patientRelative || null }, condition: { type: ride.emergency?.type || 'general', priority: ride.emergency?.priority || 'medium', description: ride.emergency?.name || 'Medical Emergency', specialInstructions: ride.contactInfo?.specialInstructions || null }, timeToArrival, ambulance: { type: (ride.vehicle || 'standard').toUpperCase(), status: ride.status, driver: ride.rider?.user ? { name: ride.rider.user.name, phone: ride.rider.user.phone } : null, currentLocation: ride.liveTracking?.currentLocation || null }, pickup: { address: ride.pickup?.address || 'Unknown location' } };
     });
     res.status(StatusCodes.OK).json({ success: true, count: formattedPatients.length, patients: formattedPatients });
   } catch (error) {
     console.error(`Incoming patients error for hospital ${req.user.hospitalId}:`, error.message);
-    res.status(StatusCodes.INTERNAL_SERVER_ERROR).json({ success: false, error: "Failed to load incoming patients. Please try again." });
+    res.status(StatusCodes.INTERNAL_SERVER_ERROR).json({ success: false, error: "Failed to load incoming patients." });
   }
 };
 
