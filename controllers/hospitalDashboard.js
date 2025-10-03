@@ -170,24 +170,25 @@ export const getIncomingPatients = async (req, res) => {
     const hospitalNameRegex = new RegExp(hospitalName, 'i');
 
     // =================================================================
-    // TODO: THIS IS A TEMPORARY WORKAROUND FOR TESTING.
-    // ... (comment from before) ...
+    // TODO: Temporary name search. Change back to ID search later.
     // =================================================================
+
+    // FINAL FIX: Instead of looking for specific active statuses, we will
+    // now get all rides that are NOT in a "finished" state. This is more reliable.
     const incomingRides = await Ride.find({
       'drop.address': hospitalNameRegex,
-      status: { $in: ["SEARCHING_FOR_RIDER", "START", "ARRIVED"] }
+      status: { $nin: ["COMPLETED", "CANCELLED"] } // $nin means "not in"
     })
     .populate('customer', 'name phone')
-    // This populate query is now correct because Ride.rider points to "Driver"
     .populate({ 
-        path: 'rider', // Populate the Driver document
+        path: 'rider', 
         populate: { 
-            path: 'user', // Inside the Driver document, populate the User document
+            path: 'user',
             model: 'User',
             select: 'name phone' 
         } 
     })
-    .sort({ 'emergency.priority': -1, createdAt: -1 })
+    .sort({ createdAt: -1 })
     .limit(50);
 
     if (!incomingRides || incomingRides.length === 0) {
@@ -198,39 +199,28 @@ export const getIncomingPatients = async (req, res) => {
       const eta = ride.destinationHospital?.estimatedArrival || new Date(Date.now() + 30 * 60000);
       const timeToArrival = Math.max(0, Math.floor((eta - new Date()) / 60000));
       return {
-        rideId: ride._id,
-        patient: { 
-          name: ride.customer?.name || "N/A",
-          phone: ride.customer?.phone || "N/A"
-        },
-        contactInfo: {
-            relative: ride.contactInfo?.patientRelative || { name: 'N/A', phone: 'N/A' },
-            specialInstructions: ride.contactInfo?.specialInstructions || 'None'
-        },
+        rideId: ride._id,
+        patient: { name: ride.customer?.name || "N/A", phone: ride.customer?.phone || "N/A" },
+        contactInfo: { relative: ride.contactInfo?.patientRelative || { name: 'N/A', phone: 'N/A' }, specialInstructions: ride.contactInfo?.specialInstructions || 'None' },
         condition: { priority: ride.emergency?.priority || 'medium', description: ride.emergency?.name || 'N/A' },
         timeToArrival,
         distance: ride.distance ? `${ride.distance.toFixed(1)} km` : 'N/A',
         ambulanceId: `AMB-${ride._id.toString().slice(-6).toUpperCase()}`,
         ambulance: {
-          driver: ride.rider?.user ? { 
-            name: ride.rider.user.name,
-            phone: ride.rider.user.phone
-          } : null,
+          driver: ride.rider?.user ? { name: ride.rider.user.name, phone: ride.rider.user.phone } : null,
           currentLocation: ride.liveTracking?.currentLocation,
           type: ride.vehicle || 'N/A',
           plateNumber: ride.rider?.vehicle?.plateNumber || 'N/A'
         },
         createdAt: ride.createdAt,
         status: ride.status,
-        pickup: {
-            address: ride.pickup?.address || 'N/A'
-        }
+        pickup: { address: ride.pickup?.address || 'N/A' }
       };
     });
 
     res.status(StatusCodes.OK).json({ success: true, count: formattedPatients.length, patients: formattedPatients });
   } catch (error) {
-    console.error(`Incoming patients error (name search) for hospital:`, error.message);
+    console.error(`Incoming patients error:`, error.message);
     res.status(StatusCodes.INTERNAL_SERVER_ERROR).json({ success: false, error: "Failed to load incoming patients." });
   }
 };
