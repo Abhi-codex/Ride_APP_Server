@@ -13,7 +13,8 @@ router.use((req, res, next) => {
 router.post("/create", auth, createRide);
 router.patch("/accept/:rideId", auth, requireRole('driver'), acceptRide);
 router.patch("/update/:rideId", auth, updateRideStatus);
-router.get("/rides", auth, getMyRides);
+// router.get("/rides", auth, getMyRides);
+router.get("/rides", getMyRides);
 router.get("/driverrides", auth, requireRole('driver'), getAvailableRides);
 router.patch("/rate/:rideId", auth, rateRide);
 router.post("/verify-pickup", auth, requireRole('driver'), verifyPickup);

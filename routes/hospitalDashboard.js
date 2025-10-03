@@ -1,8 +1,10 @@
 import express from "express";
 import rateLimit from "express-rate-limit";
-import {hospitalStaffLogin, getHospitalDashboard, getHospitalRides, getHospitalDrivers, getHospitalAnalytics,
-  updateHospitalInfo, createHospitalStaff, debugAuth, getIncomingPatients, getLiveAmbulanceTracking,
-  getAmbulanceStatus, getEmergencyContacts, updateBedAvailability, getBedAvailability, updateAmbulanceLocation
+import {
+  hospitalStaffLogin, getHospitalDashboard, getHospitalRides, getHospitalDrivers, getHospitalAnalytics,
+  updateHospitalInfo, createHospitalStaff, debugAuth, getIncomingPatients, getLiveAmbulanceTracking,
+  getAmbulanceStatus, getEmergencyContacts, updateBedAvailability, getBedAvailability, updateAmbulanceLocation,
+  getMyInfo // <-- This is the function we are adding to the list
 } from "../controllers/hospitalDashboard.js";
 import hospitalAuth from "../middleware/hospitalAuth.js";
 import { requirePermission } from "../middleware/requirePermission.js";
@@ -66,7 +68,7 @@ router.put("/bed-availability", hospitalAuth, requirePermission('manageHospitalI
 
 // Location tracking endpoint (for driver apps to update location)
 router.put("/ambulance/:rideId/location", validateRequest(validationSchemas.locationUpdate), updateAmbulanceLocation);
-
+router.get("/staff/me", hospitalAuth, getMyInfo);
 // Error handling middleware
 router.use((error, req, res, next) => {
   console.error(`Hospital Dashboard API Error: ${error.message}`);

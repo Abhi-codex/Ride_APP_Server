@@ -2,6 +2,7 @@ import dotenv from 'dotenv';
 import 'express-async-errors';
 import EventEmitter from 'events';
 import express from 'express';
+import cors from 'cors';
 import http from 'http';
 import mongoose from 'mongoose';
 import process from 'process';
@@ -33,7 +34,7 @@ console.log('DEBUG: JWT_SECRET configured:', !!process.env.JWT_SECRET);
 EventEmitter.defaultMaxListeners = 20;
 
 const app = express();
-
+app.use(cors());
 // Security middleware
 app.use(helmet({
   contentSecurityPolicy: {
