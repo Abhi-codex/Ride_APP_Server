@@ -18,7 +18,7 @@ const rideSchema = new Schema(
     },
     fare: { type: Number, required: true },
     customer: { type: Schema.Types.ObjectId, ref: "User", required: true },
-    rider: { type: Schema.Types.ObjectId, ref: "User", default: null },
+    rider: { type: Schema.Types.ObjectId, ref: "Driver", default: null },
     status: { type: String,
       enum: ["SEARCHING_FOR_RIDER", "START", "ARRIVED", "COMPLETED"],
       default: "SEARCHING_FOR_RIDER",

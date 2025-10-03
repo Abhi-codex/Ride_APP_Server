@@ -164,7 +164,6 @@ export const updateHospitalInfo = async (req, res) => {
 
 // In controllers/hospitalDashboard.js
 
-// UPDATED TEMPORARY VERSION - sends maximum data
 export const getIncomingPatients = async (req, res) => {
   try {
     const hospitalName = req.user.staffMember.hospitalId.name;
@@ -172,18 +171,24 @@ export const getIncomingPatients = async (req, res) => {
 
     // =================================================================
     // TODO: THIS IS A TEMPORARY WORKAROUND FOR TESTING.
-    // We are searching by the hospital's NAME in the 'drop.address' field.
-    // This is not reliable and should be changed in the future.
-    //
-    // IN THE FUTURE, THIS MUST BE CHANGED BACK TO SEARCH BY ID:
-    // 'destinationHospital.hospitalId': hospitalId,
-    //
-    // This can be done after the "create ride" controller bug is fixed.
+    // ... (comment from before) ...
     // =================================================================
     const incomingRides = await Ride.find({
       'drop.address': hospitalNameRegex,
       status: { $in: ["SEARCHING_FOR_RIDER", "START", "ARRIVED"] }
-    }).populate('customer', 'name phone').populate({ path: 'rider', populate: { path: 'user', select: 'name phone' } }).sort({ 'emergency.priority': -1, createdAt: -1 }).limit(50);
+    })
+    .populate('customer', 'name phone')
+    // This populate query is now correct because Ride.rider points to "Driver"
+    .populate({ 
+        path: 'rider', // Populate the Driver document
+        populate: { 
+            path: 'user', // Inside the Driver document, populate the User document
+            model: 'User',
+            select: 'name phone' 
+        } 
+    })
+    .sort({ 'emergency.priority': -1, createdAt: -1 })
+    .limit(50);
 
     if (!incomingRides || incomingRides.length === 0) {
       return res.status(StatusCodes.OK).json({ success: true, count: 0, patients: [], message: "No incoming patients at this time" });
@@ -207,9 +212,13 @@ export const getIncomingPatients = async (req, res) => {
         distance: ride.distance ? `${ride.distance.toFixed(1)} km` : 'N/A',
         ambulanceId: `AMB-${ride._id.toString().slice(-6).toUpperCase()}`,
         ambulance: {
-          driver: ride.rider?.user ? { name: ride.rider.user.name } : null,
+          driver: ride.rider?.user ? { 
+            name: ride.rider.user.name,
+            phone: ride.rider.user.phone
+          } : null,
           currentLocation: ride.liveTracking?.currentLocation,
-          type: ride.vehicle || 'N/A'
+          type: ride.vehicle || 'N/A',
+          plateNumber: ride.rider?.vehicle?.plateNumber || 'N/A'
         },
         createdAt: ride.createdAt,
         status: ride.status,
