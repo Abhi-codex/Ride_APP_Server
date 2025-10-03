@@ -162,27 +162,20 @@ export const updateHospitalInfo = async (req, res) => {
   }
 };
 
-// TEMPORARY VERSION for debugging - searches by name
+// In controllers/hospitalDashboard.js
+
+// UPDATED TEMPORARY VERSION - sends maximum data
 export const getIncomingPatients = async (req, res) => {
   try {
-    // Get the NAME of the logged-in user's hospital from the middleware
     const hospitalName = req.user.staffMember.hospitalId.name;
-    
-    // Create a case-insensitive regular expression to search for the name
     const hospitalNameRegex = new RegExp(hospitalName, 'i');
 
     // =================================================================
     // TODO: THIS IS A TEMPORARY WORKAROUND FOR TESTING.
-    // We are searching by the hospital's NAME in the 'drop.address' field.
-    // This is not reliable and should be changed in the future.
-    //
-    // IN THE FUTURE, THIS MUST BE CHANGED BACK TO SEARCH BY ID:
-    // 'destinationHospital.hospitalId': hospitalId,
-    //
-    // This can be done after the "create ride" controller bug is fixed.
+    // ... (comment from before) ...  instead of name we have to use hospital id refer prev version
     // =================================================================
     const incomingRides = await Ride.find({
-      'drop.address': hospitalNameRegex, // This is the temporary part
+      'drop.address': hospitalNameRegex,
       status: { $in: ["SEARCHING_FOR_RIDER", "START", "ARRIVED"] }
     }).populate('customer', 'name phone').populate({ path: 'rider', populate: { path: 'user', select: 'name phone' } }).sort({ 'emergency.priority': -1, createdAt: -1 }).limit(50);
 
@@ -190,20 +183,33 @@ export const getIncomingPatients = async (req, res) => {
       return res.status(StatusCodes.OK).json({ success: true, count: 0, patients: [], message: "No incoming patients at this time" });
     }
 
-    // The rest of the function formats the response as before
     const formattedPatients = incomingRides.map(ride => {
       const eta = ride.destinationHospital?.estimatedArrival || new Date(Date.now() + 30 * 60000);
       const timeToArrival = Math.max(0, Math.floor((eta - new Date()) / 60000));
       return {
         rideId: ride._id,
-        patient: { name: ride.customer?.name || "N/A" },
+        patient: { 
+          name: ride.customer?.name || "N/A",
+          phone: ride.customer?.phone || "N/A"
+        },
+        contactInfo: {
+            relative: ride.contactInfo?.patientRelative || { name: 'N/A', phone: 'N/A' },
+            specialInstructions: ride.contactInfo?.specialInstructions || 'None'
+        },
         condition: { priority: ride.emergency?.priority || 'medium', description: ride.emergency?.name || 'N/A' },
         timeToArrival,
+        distance: ride.distance ? `${ride.distance.toFixed(1)} km` : 'N/A',
         ambulanceId: `AMB-${ride._id.toString().slice(-6).toUpperCase()}`,
         ambulance: {
           driver: ride.rider?.user ? { name: ride.rider.user.name } : null,
-          currentLocation: ride.liveTracking?.currentLocation
+          currentLocation: ride.liveTracking?.currentLocation,
+          type: ride.vehicle || 'N/A'
         },
+        createdAt: ride.createdAt,
+        status: ride.status,
+        pickup: {
+            address: ride.pickup?.address || 'N/A'
+        }
       };
     });
 
