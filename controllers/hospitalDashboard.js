@@ -53,16 +53,53 @@ export const hospitalStaffLogin = async (req, res) => {
   }
 };
 
+// In controllers/hospitalDashboard.js
+
 export const createHospitalStaff = async (req, res) => {
   try {
-    const { name, email, password, phone, hospitalId, role, department, permissions } = req.body;
+    const { name, email, password, phone, hospitalId, role, department } = req.body; // Removed permissions from here
+
+    // Check if email already exists
     if (await HospitalStaff.findOne({ email: email.toLowerCase().trim() })) { throw new BadRequestError("Email already registered"); }
     if (await User.findOne({ email: email.toLowerCase().trim() })) { throw new BadRequestError("Email already registered in the system"); }
+
+    // Verify hospital exists
     if (!await Hospital.findById(hospitalId)) { throw new BadRequestError("Invalid hospital ID"); }
+
     const hashedPassword = await bcrypt.hash(password, 12);
+
+    // --- NEW PERMISSIONS LOGIC ---
+    // Start with default, limited permissions
+    let permissions = {
+        viewDashboard: true,
+        manageDrivers: false,
+        viewRides: true,
+        manageHospitalInfo: false,
+        viewAnalytics: true
+    };
+
+    // If the role being created is 'admin', give them full permissions
+    if (role === 'admin') {
+        permissions.manageDrivers = true;
+        permissions.manageHospitalInfo = true;
+    }
+    // --- END OF NEW LOGIC ---
+
     const user = await User.create({ name: name.trim(), email: email.toLowerCase().trim(), password: hashedPassword, phone: phone.trim(), role: 'hospital_staff' });
-    const staffMember = await HospitalStaff.create({ user: user._id, name: name.trim(), email: email.toLowerCase().trim(), phone: phone.trim(), hospitalId, role: role || 'staff', department: department || 'emergency', hashedPassword, permissions: permissions || { viewDashboard: true, manageDrivers: false, viewRides: true, manageHospitalInfo: false, viewAnalytics: true }, isActive: true });
-    const populatedStaff = await HospitalStaff.findById(staffMember._id).populate('hospitalId', 'name address').select('-hashedPassword -loginAttempts');
+    const staffMember = await HospitalStaff.create({ 
+        user: user._id, 
+        name: name.trim(), 
+        email: email.toLowerCase().trim(), 
+        phone: phone.trim(), 
+        hospitalId, 
+        role: role || 'staff', 
+        department: department || 'emergency', 
+        hashedPassword, 
+        permissions: permissions, // Use our new permissions object
+        isActive: true 
+    });
+
+    const populatedStaff = await HospitalStaff.findById(staffMember._id).populate('hospitalId', 'name address');
     res.status(StatusCodes.CREATED).json({ success: true, message: "Hospital staff created successfully", staff: populatedStaff });
   } catch (error) {
     console.error('Create staff error:', error.message);
