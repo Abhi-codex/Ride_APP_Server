@@ -287,54 +287,44 @@ export const updateBedAvailability = async (req, res) => {
 
 // In controllers/hospitalDashboard.js
 
-export const updateBedAvailability = async (req, res) => {
+export const getBedAvailability = async (req, res) => {
   try {
-    // FIX: Get the hospitalId correctly from the middleware
+    // This correctly gets the hospital's unique ID from the staff member
+    // object that the authentication middleware found for us.
     const hospitalId = req.user.staffMember.hospitalId._id;
-    const { bedDetails } = req.body;
+    
+    // Find the hospital in the database using that ID
+    const hospital = await Hospital.findById(hospitalId)
+      .select('name bedDetails totalBeds availableBeds lastUpdated updatedAt');
 
-    // The rest of your original logic for calculation is correct
-    const calculatedTotal = (bedDetails.icu.total || 0) + (bedDetails.general.total || 0) + (bedDetails.emergency.total || 0);
-    const calculatedAvailable = (bedDetails.icu.available || 0) + (bedDetails.general.available || 0) + (bedDetails.emergency.available || 0);
+    if (!hospital) { 
+      throw new BadRequestError("Hospital not found"); 
+    }
 
-    const updateData = {
-      'bedDetails.icu.total': bedDetails.icu.total,
-      'bedDetails.icu.available': bedDetails.icu.available,
-      'bedDetails.general.total': bedDetails.general.total,
-      'bedDetails.general.available': bedDetails.general.available,
-      'bedDetails.emergency.total': bedDetails.emergency.total,
-      'bedDetails.emergency.available': bedDetails.emergency.available,
-      totalBeds: calculatedTotal,
-      availableBeds: calculatedAvailable,
-      lastUpdated: new Date()
-    };
+    // Prepare the data to be sent to the frontend
+    const bedDetails = hospital.bedDetails || { icu: { total: 0, available: 0 }, general: { total: 0, available: 0 }, emergency: { total: 0, available: 0 } };
+    const response = { 
+      hospital: { 
+        id: hospital._id, 
+        name: hospital.name, 
+        bedDetails, 
+        totalBeds: hospital.totalBeds || 0, 
+        availableBeds: hospital.availableBeds || 0, 
+        lastUpdated: hospital.lastUpdated || hospital.updatedAt, 
+        occupancyRate: hospital.totalBeds > 0 ? Math.round(((hospital.totalBeds - hospital.availableBeds) / hospital.totalBeds) * 100) : 0 
+      } 
+    };
 
-    const updatedHospital = await Hospital.findByIdAndUpdate(
-      hospitalId,
-      { $set: updateData }, // Use $set for safer updates
-      { new: true, runValidators: true, select: 'name bedDetails totalBeds availableBeds lastUpdated' }
-    );
-
-    if (!updatedHospital) {
-      throw new BadRequestError("Hospital not found");
-    }
-
-    if (req.io) {
-      req.io.emit('bedAvailabilityUpdate', updatedHospital);
-    }
-
-    res.status(StatusCodes.OK).json({
-      success: true,
-      message: "Bed availability updated successfully",
-      hospital: updatedHospital
-    });
+    // Send the successful response
+    res.status(StatusCodes.OK).json({ success: true, ...response });
 
   } catch (error) {
-    console.error(`Bed update error for hospital ${req.user.hospitalId}:`, error.message);
+    const hospitalIdForError = req.user ? req.user.hospitalId : 'unknown';
+    console.error(`Bed availability error for hospital ${hospitalIdForError}:`, error.message);
     res.status(error.statusCode || StatusCodes.INTERNAL_SERVER_ERROR).json({ 
-      success: false,
-      error: error.message
-    });
+      success: false, 
+      error: "Failed to load bed availability. Please try again." 
+    });
   }
 };
 
