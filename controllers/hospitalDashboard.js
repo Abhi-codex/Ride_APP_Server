@@ -319,6 +319,24 @@ export const updateAmbulanceLocation = async (req, res) => {
   }
 };
 
+// In controllers/hospitalDashboard.js
+
 export const getMyInfo = async (req, res) => {
-    res.status(StatusCodes.OK).json({ staff: req.user.staffMember });
+  try {
+    // The hospitalAuth middleware already found the full staff member object.
+    // We just need to send it back as the response.
+    if (!req.user || !req.user.staffMember) {
+      throw new UnauthenticatedError("Authentication error: User information not found.");
+    }
+    res.status(StatusCodes.OK).json({ 
+      success: true, 
+      staff: req.user.staffMember 
+    });
+  } catch (error) {
+    console.error("Error in getMyInfo:", error.message);
+    res.status(StatusCodes.INTERNAL_SERVER_ERROR).json({ 
+      success: false, 
+      error: error.message 
+    });
+  }
 };
